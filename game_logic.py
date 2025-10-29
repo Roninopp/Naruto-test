@@ -1,5 +1,5 @@
 import random
-import math 
+import math
 import json # <-- NEW: Need this for parsing equipment
 
 # --- Constants from your prompts ---
@@ -21,7 +21,7 @@ SHOP_INVENTORY = {
         'name': 'Flak Jacket',
         'type': 'armor',
         'price': 400,
-        'stats': {'strength': 0, 'speed': 0, 'intelligence': 0, 'stamina': 10} 
+        'stats': {'strength': 0, 'speed': 0, 'intelligence': 0, 'stamina': 10}
     },
     'health_potion': {
         'name': 'Health Potion',
@@ -138,7 +138,7 @@ ELEMENT_MATRIX = {
 ELEMENT_ANIMATIONS = {
     'fire': [
         "🔥 FIRE STYLE! 🔥",
-        "🔥🔥 Igniting! 🔥🔥", 
+        "🔥🔥 Igniting! 🔥🔥",
         "🔥🔥🔥 INFERNO! 🔥🔥🔥",
         "💥 BURNING DAMAGE! ❤️‍🔥"
     ],
@@ -151,7 +151,7 @@ ELEMENT_ANIMATIONS = {
     'lightning': [
         "⚡ LIGHTNING STYLE! ⚡",
         "⚡⚡ Charging! ⚡⚡",
-        "⚡⚡⚡ THUNDER STRIKE! ⚡⚡⚡", 
+        "⚡⚡⚡ THUNDER STRIKE! ⚡⚡⚡",
         "💢 SHOCK DAMAGE! 🌀"
     ],
     'wind': [
@@ -198,6 +198,8 @@ BASE_CHAKRA = 100
 def health_bar(current, maximum, length=10):
     if maximum == 0:
         return f"[🖤🖤🖤🖤🖤🖤🖤🖤🖤🖤] 0/0"
+    # Ensure current HP isn't negative for display
+    current = max(0, current)
     filled = int((current / maximum) * length)
     empty = length - filled
     bar = f"[{'❤️' * filled}{'🖤' * empty}]"
@@ -206,6 +208,8 @@ def health_bar(current, maximum, length=10):
 def chakra_bar(current, maximum, length=8):
     if maximum == 0:
         return f"[⚪⚪⚪⚪⚪⚪⚪⚪] 0/0"
+    # Ensure current chakra isn't negative for display
+    current = max(0, current)
     filled = int((current / maximum) * length)
     empty = length - filled
     bar = f"[{'🔵' * filled}{'⚪' * empty}]"
@@ -223,16 +227,16 @@ def distribute_stats(player_stats, points_to_add):
     for _ in range(points_to_add):
         stat_to_boost = random.choice(stats_to_upgrade)
         player_stats[stat_to_boost] += 1
-    
+
     player_stats['max_hp'] = BASE_HP + (player_stats['stamina'] * 10)
     player_stats['max_chakra'] = BASE_CHAKRA + (player_stats['intelligence'] * 5)
-    
+
     return player_stats
 
 # --- NEW: Calculate Total Stats Function ---
 def get_total_stats(player_data):
     """Calculates total stats including equipment bonuses."""
-    
+
     # Start with base stats
     total_stats = {
         'strength': player_data['strength'],
@@ -240,7 +244,7 @@ def get_total_stats(player_data):
         'intelligence': player_data['intelligence'],
         'stamina': player_data['stamina']
     }
-    
+
     # Load equipment
     try:
         player_equipment = json.loads(player_data['equipment'])
@@ -255,43 +259,43 @@ def get_total_stats(player_data):
                 for stat, value in item_info['stats'].items():
                     if value > 0 and stat in total_stats:
                         total_stats[stat] += value
-                        
+
     # Recalculate Max HP/Chakra based on total stamina/intelligence
     total_stats['max_hp'] = BASE_HP + (total_stats['stamina'] * 10)
     total_stats['max_chakra'] = BASE_CHAKRA + (total_stats['intelligence'] * 5)
-    
+
     return total_stats
 # --- END OF NEW FUNCTION ---
 
 def check_for_level_up(player_data):
     leveled_up = False
     messages = []
-    
+
     exp_needed = get_exp_for_next_level(player_data['level'])
-    
+
     while player_data['exp'] >= exp_needed:
         if player_data['level'] >= 60:
-            player_data['exp'] = 0 
+            player_data['exp'] = 0
             break
-            
+
         leveled_up = True
-        
+
         player_data['level'] += 1
         player_data['exp'] -= exp_needed
-        
+
         messages.append(f"🎉 LEVEL UP! You are now Level {player_data['level']}! 🎉")
-        
+
         player_data = distribute_stats(player_data, STAT_POINTS_PER_LEVEL)
         messages.append(f"💪 Your stats have increased! (+{STAT_POINTS_PER_LEVEL} points)")
-        
+
         new_rank = get_rank(player_data['level'])
         if new_rank != player_data['rank']:
             player_data['rank'] = new_rank
             messages.append(f"🏆 RANK UP! You are now a {new_rank}! 🏆")
-            
+
         player_data['current_hp'] = player_data['max_hp']
         player_data['current_chakra'] = player_data['max_chakra']
-        
+
         exp_needed = get_exp_for_next_level(player_data['level'])
 
     return player_data, leveled_up, messages
@@ -302,52 +306,75 @@ def calculate_damage(attacker, defender, jutsu_info):
     Calculates damage using TOTAL stats (including equipment).
     attacker/defender are player data dictionaries.
     """
-    
+
     # --- CHANGE: Get TOTAL stats ---
     attacker_stats = get_total_stats(attacker)
     defender_stats = get_total_stats(defender)
-    
+
     # Get attacker's level and TOTAL speed
-    attacker_level = attacker['level'] 
-    attacker_speed = attacker_stats['speed'] 
-    
+    attacker_level = attacker['level']
+    attacker_speed = attacker_stats['speed']
+
     # Get defender's element and TOTAL stamina (for potential future defense calcs)
     defender_element = VILLAGE_TO_ELEMENT.get(defender['village'], 'none')
     defender_stamina = defender_stats['stamina']
-    
+
     jutsu_power = jutsu_info['power']
     jutsu_element = jutsu_info['element']
 
     # Base Damage (still uses level, not total stats)
     base_damage = jutsu_power + (attacker_level * 2)
-    
+
     element_bonus = ELEMENT_MATRIX[jutsu_element][defender_element]
-    
+
     # Critical Chance (uses TOTAL speed)
     critical_chance = (attacker_speed / 200) + 0.05
     is_critical = random.random() < critical_chance
     critical_multiplier = 1.8 if is_critical else 1.0
-    
+
     final_damage = int((base_damage * element_bonus * critical_multiplier))
-    
+
     return final_damage, is_critical, element_bonus > 1.0
 
 def calculate_taijutsu_damage(attacker, defender):
     """Calculates Taijutsu damage using TOTAL stats."""
-    
+
     # --- CHANGE: Get TOTAL stats ---
     attacker_stats = get_total_stats(attacker)
     # defender_stats = get_total_stats(defender) # Not needed for this simple calc yet
 
     # Base Damage (uses TOTAL strength)
-    base_damage = attacker_stats['strength'] * 0.8 
-    
+    base_damage = attacker_stats['strength'] * 0.8
+
     # Critical Chance (uses TOTAL speed)
     critical_chance = (attacker_stats['speed'] / 200) + 0.05
     is_critical = random.random() < critical_chance
     critical_multiplier = 1.8 if is_critical else 1.0
-    
+
     final_damage = int(base_damage * critical_multiplier)
-    
+
     return final_damage, is_critical
 # --- END OF UPDATES ---
+
+
+# --- NEW: WORLD BOSS DATA ---
+WORLD_BOSSES = {
+    'gedo_mazo': {
+        'name': 'Gedo Mazo Statue',
+        'hp': 10000,
+        'ryo_pool': 25000,
+        'image': 'images/gedo_mazo.png',
+        # Boss attacks back! Defines % of PLAYER'S Max HP taken as damage
+        'taijutsu_recoil': 0.05, # 5% recoil
+        'jutsu_recoil': 0.15 # 15% recoil
+    },
+    'ten_tails': {
+        'name': 'Ten-Tails (Incomplete)',
+        'hp': 50000,
+        'ryo_pool': 100000,
+        'image': 'images/ten_tails.png',
+        'taijutsu_recoil': 0.08, # 8% recoil
+        'jutsu_recoil': 0.20 # 20% recoil
+    }
+}
+# --- END NEW ---
