@@ -1,12 +1,12 @@
 import logging
 import json
-import random 
+import random
 import asyncio
-from datetime import timedelta 
+from datetime import timedelta, datetime # <-- Added datetime import
 
 # Setup Logging FIRST
 logging.basicConfig(
-    level=logging.INFO, 
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -28,24 +28,93 @@ import jutsu
 import battle
 import cache
 import shop
-import help_handler 
-# --- REMOVED protecc IMPORT ---
+import help_handler
+import world_boss # <-- NEW: Import the world_boss module
 
 # --- Constants ---
-BOT_TOKEN = "8400754472:AAFzBj_SsUh7BAuIcBO27kHPxQ9W3KnFZpQ" 
-START_IMAGE_URL = "https://envs.sh/r6z.jpg" 
+BOT_TOKEN = "8400754472:AAFzBj_SsUh7BAuIcBO27kHPxQ9W3KnFZpQ" # Replace with your bot token
+START_IMAGE_URL = "https://envs.sh/r6z.jpg" # Replace with your start image URL
 
-# --- REMOVED post_new_character FUNCTION ---
+# --- NEW: World Boss Spawn Function ---
+async def spawn_world_boss(context: ContextTypes.DEFAULT_TYPE):
+    """Checks for chats that need a boss and spawns one."""
+    logger.info("BOSS JOB: Running spawn check...")
+
+    # 1. Get list of all enabled chat IDs from the DB
+    enabled_chat_ids = db.get_all_boss_chats()
+    if not enabled_chat_ids:
+        logger.info("BOSS JOB: No enabled chats. Skipping spawn.")
+        return
+
+    # 2. Loop through each enabled chat
+    for chat_id in enabled_chat_ids:
+        boss_status = db.get_boss_status(chat_id)
+
+        # 3. Check if a boss is ALREADY active in this chat
+        if boss_status and boss_status.get('is_active'):
+            logger.info(f"BOSS JOB: Boss already active in chat {chat_id}. Skipping.")
+            continue # Skip to the next chat
+
+        # 4. If no active boss, spawn a new one
+        logger.info(f"BOSS JOB: Spawning new boss in chat {chat_id}...")
+        boss_key = random.choice(list(gl.WORLD_BOSSES.keys()))
+        boss_info = gl.WORLD_BOSSES[boss_key]
+
+        spawn_time_iso = datetime.now().isoformat()
+
+        # Update DB: Set boss as active
+        conn = db.get_db_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE world_boss_status
+                SET is_active = 1, boss_key = ?, current_hp = ?, max_hp = ?, ryo_pool = ?, spawn_time = ?
+                WHERE chat_id = ?
+                """,
+                (boss_key, boss_info['hp'], boss_info['hp'], boss_info['ryo_pool'], spawn_time_iso, chat_id)
+            )
+            # IMPORTANT: Clear old damage data for this chat
+            cursor.execute("DELETE FROM world_boss_damage WHERE chat_id = ?", (chat_id,))
+            conn.commit()
+            logger.info(f"BOSS JOB: Spawn successful for {boss_info['name']} in chat {chat_id}")
+        except sqlite3.Error as e:
+            logger.error(f"BOSS JOB: DB error spawning boss in chat {chat_id}: {e}")
+            conn.rollback()
+            continue # Skip to next chat on error
+        finally:
+            conn.close()
+
+        # 5. Send spawn message to the group
+        spawn_caption = (
+            f"👹 **A Wild {boss_info['name']} Has Appeared!** 👹\n\n"
+            f"Work together to defeat it!\n"
+            f"Use `/boss_taijutsu` or `/boss_jutsu` to attack.\n"
+            f"Check `/boss_status` for HP and top attackers."
+        )
+        try:
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=open(boss_info['image'], 'rb'),
+                caption=spawn_caption,
+                parse_mode="HTML"
+            )
+            # Add a small delay between spawns if needed
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            logger.error(f"BOSS JOB: Failed to send spawn photo to chat {chat_id}: {e}")
+
+    logger.info("BOSS JOB: Finished spawn check for all chats.")
 
 # --- Command Handlers (Core) ---
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the /start command with photo and interactive help button."""
     user = update.effective_user
-    player = db.get_player(user.id) 
+    player = db.get_player(user.id)
 
     help_button = InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")
-    
+
     if player:
         # Returning Player
         welcome_text = (
@@ -53,13 +122,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "The path of the ninja is long and challenging. Continue your training, undertake perilous missions, and prove your strength against rivals!\n\n"
             "<i>What destiny awaits you today?</i>"
         )
-        reply_markup = InlineKeyboardMarkup([[help_button]]) 
+        reply_markup = InlineKeyboardMarkup([[help_button]])
         try:
             await context.bot.send_photo(
                 chat_id=update.effective_chat.id,
                 photo=START_IMAGE_URL,
                 caption=welcome_text,
-                parse_mode="HTML", 
+                parse_mode="HTML",
                 reply_markup=reply_markup
             )
         except Exception as e:
@@ -69,7 +138,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         # New Player Registration
         logger.info(f"New user registration started: {user.username} (ID: {user.id})")
-        
+
         welcome_text = (
             f"Greetings, {user.username}! A new legend begins...\n\n"
             "✨ Welcome to the <b>Shinobi Chronicles RPG</b>! ✨\n\n"
@@ -81,21 +150,21 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "  🏆 Rise through the ninja ranks, from humble Academy Student to the legendary Kage!\n\n"
             "Your adventure starts now! Choose your home village wisely, as it grants unique bonuses:"
         )
-        
+
         village_keyboard = [
             [InlineKeyboardButton(name, callback_data=f"village_{key}")]
             for key, name in gl.VILLAGES.items()
         ]
-        village_keyboard.append([help_button]) 
-        
+        village_keyboard.append([help_button])
+
         reply_markup = InlineKeyboardMarkup(village_keyboard)
-        
+
         try:
             await context.bot.send_photo(
                 chat_id=update.effective_chat.id,
                 photo=START_IMAGE_URL,
                 caption=welcome_text,
-                parse_mode="HTML", 
+                parse_mode="HTML",
                 reply_markup=reply_markup
             )
         except Exception as e:
@@ -104,7 +173,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Other Commands (profile, give_exp, etc. - no changes needed) ---
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (code is the same) ...
     user = update.effective_user
     player = db.get_player(user.id)
 
@@ -112,27 +180,27 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You haven't started your journey yet! Use /start to begin.")
         return
 
-    player_equipment = json.loads(player.get('equipment', '{}')) 
-    total_stats = gl.get_total_stats(player) 
-    
+    player_equipment = json.loads(player.get('equipment', '{}'))
+    total_stats = gl.get_total_stats(player)
+
     equipment_text = ""
-    for slot in ['weapon', 'armor', 'accessory']: 
-        item_key = player_equipment.get(slot) 
+    for slot in ['weapon', 'armor', 'accessory']:
+        item_key = player_equipment.get(slot)
         if item_key:
             item_info = gl.SHOP_INVENTORY.get(item_key)
             if item_info:
                 item_stat_text = []
-                for stat, value in item_info.get('stats', {}).items(): 
+                for stat, value in item_info.get('stats', {}).items():
                     if value > 0 and stat in total_stats:
-                        item_stat_text.append(f"+{value} {stat[:3].capitalize()}") 
-                
+                        item_stat_text.append(f"+{value} {stat[:3].capitalize()}")
+
                 equipment_text += f"<b>{slot.title()}:</b> {item_info.get('name', 'Unknown Item')} ({', '.join(item_stat_text)})\n"
         else:
             equipment_text += f"<b>{slot.title()}:</b> None\n"
 
-    total_max_hp = total_stats.get('max_hp', gl.BASE_HP) 
+    total_max_hp = total_stats.get('max_hp', gl.BASE_HP)
     total_max_chakra = total_stats.get('max_chakra', gl.BASE_CHAKRA)
-    
+
     hp_bar = gl.health_bar(player.get('current_hp', total_max_hp), total_max_hp)
     chakra_bar = gl.chakra_bar(player.get('current_chakra', total_max_chakra), total_max_chakra)
     exp_needed = gl.get_exp_for_next_level(player.get('level', 1))
@@ -155,14 +223,13 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"--- EQUIPMENT ---\n{equipment_text}\n"
         f"<b>Wins:</b> {player.get('wins', 0)} | <b>Losses:</b> {player.get('losses', 0)}"
     )
-    
+
     await update.message.reply_text(profile_text, parse_mode="HTML")
 
 
 async def give_exp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (code is the same) ...
     user = update.effective_user
-    player = db.get_player(user.id) 
+    player = db.get_player(user.id)
 
     if not player:
         await update.message.reply_text("Use /start first.")
@@ -178,7 +245,7 @@ async def give_exp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     temp_player_data['exp'] += amount
     temp_player_data['total_exp'] += amount
     final_player_data, leveled_up, messages = gl.check_for_level_up(temp_player_data)
-    
+
     success = db.update_player(user.id, final_player_data)
 
     if success:
@@ -194,8 +261,8 @@ async def village_selection_callback(update: Update, context: ContextTypes.DEFAU
     await query.answer()
 
     user = query.from_user
-    village_key = query.data.split('_', 1)[1] 
-    
+    village_key = query.data.split('_', 1)[1]
+
     if db.get_player(user.id):
          # Just ensure the help button is there if they click again
          await query.edit_message_reply_markup(
@@ -205,33 +272,33 @@ async def village_selection_callback(update: Update, context: ContextTypes.DEFAU
 
     username = user.username if user.username else user.first_name
     village_name = gl.VILLAGES[village_key]
-    
+
     success = db.create_player(user.id, username, village_name)
-    
+
     original_caption = query.message.caption or ""
     welcome_part = original_caption.split('Your adventure starts now!')[0] if 'Your adventure starts now!' in original_caption else original_caption + "\n\n"
 
     new_caption = (
-        f"{welcome_part}" 
+        f"{welcome_part}"
         f"<b>You have joined {village_name}!</b>\n\n"
         "A new path is set. Your training begins now.\n"
         "Use /profile to check your new status."
     )
-    
+
     if success:
         logger.info(f"User {username} chose {village_name}")
         try:
             # Edit original photo caption
-            await query.edit_message_caption( 
+            await query.edit_message_caption(
                 caption=new_caption,
                 parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]]) 
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]])
             )
         except Exception as e:
             logger.error(f"Error editing caption after village selection: {e}")
             # Fallback if edit fails
             await query.message.reply_text(new_caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]]))
-            
+
     else:
         error_caption = (
              f"{original_caption}\n\n"
@@ -248,7 +315,7 @@ async def village_selection_callback(update: Update, context: ContextTypes.DEFAU
 def main():
     """Starts the bot."""
     logger.info("Starting bot...")
-    
+
     db.create_tables()
     db.update_schema()
 
@@ -258,8 +325,8 @@ def main():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("profile", profile_command))
     application.add_handler(CommandHandler("giveexp", give_exp_command))
-    application.add_handler(CommandHandler("help", help_handler.show_main_help_menu)) 
-    
+    application.add_handler(CommandHandler("help", help_handler.show_main_help_menu))
+
     application.add_handler(CommandHandler("missions", missions.missions_command))
     application.add_handler(CallbackQueryHandler(missions.mission_callback, pattern="^mission_"))
     application.add_handler(CommandHandler("train", training.training_command))
@@ -273,15 +340,28 @@ def main():
     application.add_handler(CommandHandler("shop", shop.shop_command))
     application.add_handler(CallbackQueryHandler(shop.shop_buy_callback, pattern="^shop_buy_"))
     application.add_handler(CallbackQueryHandler(village_selection_callback, pattern="^village_"))
-    
-    # --- REMOVED PROTECC HANDLERS ---
 
-    # --- Help Handler Callbacks (Corrected Prefix) ---
-    application.add_handler(CallbackQueryHandler(help_handler.show_main_help_menu, pattern="^show_main_help$")) 
+    # --- NEW: WORLD BOSS HANDLERS ---
+    application.add_handler(CommandHandler("enable_world_boss", world_boss.enable_world_boss_command))
+    application.add_handler(CommandHandler("boss_status", world_boss.boss_status_command))
+    application.add_handler(CommandHandler("boss_taijutsu", world_boss.boss_taijutsu_command))
+    application.add_handler(CommandHandler("boss_jutsu", world_boss.boss_jutsu_command))
+    # Add the callback handler for the Jutsu buttons
+    application.add_handler(CallbackQueryHandler(world_boss.boss_jutsu_callback, pattern="^boss_usejutsu_"))
+    # --- END NEW ---
+
+    # --- Help Handler Callbacks ---
+    application.add_handler(CallbackQueryHandler(help_handler.show_main_help_menu, pattern="^show_main_help$"))
     application.add_handler(CallbackQueryHandler(help_handler.show_module_help, pattern="^help_module_"))
     application.add_handler(CallbackQueryHandler(help_handler.back_to_main_help_callback, pattern="^back_to_main_help$"))
 
-    # --- REMOVED JOB QUEUE ---
+    # --- NEW: START THE BOSS SPAWN JOB QUEUE ---
+    job_queue = application.job_queue
+    # Run 'spawn_world_boss' every 2 minutes (120 seconds) for testing
+    # first=1 means it runs 1 second after startup for immediate testing
+    job_queue.run_repeating(spawn_world_boss, interval=120, first=1)
+    logger.info("World Boss spawn job scheduled for every 2 minutes.")
+    # --- END NEW ---
 
     logger.info("Bot is polling...")
     application.run_polling()
