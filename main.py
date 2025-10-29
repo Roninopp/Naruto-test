@@ -1,10 +1,10 @@
+# ... (imports and other functions remain the same) ...
 import logging
 import json
 import random
 import asyncio
-from datetime import timedelta, datetime # <-- Added datetime import
+from datetime import timedelta, datetime
 
-# Setup Logging FIRST
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -13,13 +13,9 @@ logger = logging.getLogger(__name__)
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Application,
-    CommandHandler,
-    CallbackQueryHandler,
-    ContextTypes,
+    Application, CommandHandler, CallbackQueryHandler, ContextTypes
 )
 
-# Import our code modules
 import database as db
 import game_logic as gl
 import missions
@@ -30,13 +26,11 @@ import cache
 import shop
 import help_handler
 import world_boss
-import sudo # <-- NEW: Import sudo module
+import sudo # <-- Already imported
 
-# --- Constants ---
-BOT_TOKEN = "8400754472:AAFzBj_SsUh7BAuIcBO27kHPxQ9W3KnFZpQ" # Replace with your bot token
-START_IMAGE_URL = "https://envs.sh/r6z.jpg" # Replace with your start image URL
+BOT_TOKEN = "8400754472:AAFzBj_SsUh7BAuIcBO27kHPxQ9W3KnFZpQ"
+START_IMAGE_URL = "https://envs.sh/r6z.jpg"
 
-# --- World Boss Spawn Function (code is the same) ---
 async def spawn_world_boss(context: ContextTypes.DEFAULT_TYPE):
     # ... (code is the same) ...
     logger.info("BOSS JOB: Running spawn check...")
@@ -92,7 +86,6 @@ async def spawn_world_boss(context: ContextTypes.DEFAULT_TYPE):
     logger.info("BOSS JOB: Finished spawn check for all chats.")
 
 
-# --- Command Handlers (Core) (code is the same) ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ... (code is the same) ...
     user = update.effective_user
@@ -142,7 +135,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(welcome_text, parse_mode="HTML", reply_markup=reply_markup)
 
 
-# --- Other Commands (profile, give_exp, etc. - code is the same) ---
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ... (code is the same) ...
     user = update.effective_user
@@ -213,7 +205,6 @@ async def give_exp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("An error occurred while adding EXP.")
 
 
-# --- Callbacks (village_selection - code is the same) ---
 async def village_selection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ... (code is the same) ...
     query = update.callback_query
@@ -257,8 +248,6 @@ async def village_selection_callback(update: Update, context: ContextTypes.DEFAU
              logger.error(f"Error editing caption after village selection error: {e}")
 
 
-# --- Main Bot Setup ---
-
 def main():
     """Starts the bot."""
     logger.info("Starting bot...")
@@ -272,7 +261,7 @@ def main():
     # Core handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("profile", profile_command))
-    application.add_handler(CommandHandler("giveexp", give_exp_command)) # Keep this? sudo_give overlaps
+    application.add_handler(CommandHandler("giveexp", give_exp_command))
     application.add_handler(CommandHandler("help", help_handler.show_main_help_menu))
 
     # Game Module Handlers
@@ -302,7 +291,7 @@ def main():
     application.add_handler(CallbackQueryHandler(help_handler.show_module_help, pattern="^help_module_"))
     application.add_handler(CallbackQueryHandler(help_handler.back_to_main_help_callback, pattern="^back_to_main_help$"))
 
-    # --- NEW: SUDO HANDLERS ---
+    # --- SUDO HANDLERS ---
     application.add_handler(CommandHandler("server_stats", sudo.server_stats_command))
     application.add_handler(CommandHandler("db_query", sudo.db_query_command))
     application.add_handler(CommandHandler("sudo_give", sudo.sudo_give_command))
@@ -310,13 +299,14 @@ def main():
     application.add_handler(CommandHandler("list_boss_chats", sudo.list_boss_chats_command))
     application.add_handler(CommandHandler("sudo_leave", sudo.sudo_leave_command))
     application.add_handler(CommandHandler("get_user", sudo.get_user_command))
+    # --- NEW: Bot Stats Handler ---
+    application.add_handler(CommandHandler("bot_stats", sudo.bot_stats_command))
     # --- END NEW ---
 
     # --- Start the Boss Spawn Job ---
     job_queue = application.job_queue
     job_queue.run_repeating(spawn_world_boss, interval=3600, first=1) # 1 hour
     logger.info("World Boss spawn job scheduled for every 1 hour.")
-    # --- END JOB QUEUE ---
 
     logger.info("Bot is polling...")
     application.run_polling()
