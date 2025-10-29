@@ -338,7 +338,11 @@ def main():
     # --- Help Handler Callbacks (Corrected Prefix) ---
     application.add_handler(CallbackQueryHandler(help_handler.show_main_help_menu, pattern="^show_main_help$")) 
     application.add_handler(CallbackQueryHandler(help_handler.show_module_help, pattern="^help_module_"))
-    application.add_handler(CallbackQueryH`andler.back_to_main_help_callback, pattern="^back_to_main_help$"))
+    
+    # --- THIS IS THE FIX ---
+    # Removed the backtick ` and extra parenthesis from the original error
+    application.add_handler(CallbackQueryHandler(help_handler.back_to_main_help_callback, pattern="^back_to_main_help$"))
+    # --- END OF FIX ---
 
     # --- NEW: START THE JOB QUEUE ---
     job_queue = application.job_queue
