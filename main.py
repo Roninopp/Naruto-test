@@ -67,7 +67,9 @@ async def post_new_character(context: ContextTypes.DEFAULT_TYPE):
         f"<b>Name:</b> {spotlight_data['name']}\n"
         f"<b>Rarity:</b> {rarity_info['emoji']} {spotlight_data['rarity'].title()}\n"
         f"<b>Series:</b> {spotlight_data['series']}\n\n"
-        f"Use: `/proteec <full name>`"
+        # --- THIS IS THE FIX ---
+        f"Use: `/proteec [full name]`"
+        # --- END OF FIX ---
     )
 
     # 6. Loop and send to all chats
@@ -338,11 +340,7 @@ def main():
     # --- Help Handler Callbacks (Corrected Prefix) ---
     application.add_handler(CallbackQueryHandler(help_handler.show_main_help_menu, pattern="^show_main_help$")) 
     application.add_handler(CallbackQueryHandler(help_handler.show_module_help, pattern="^help_module_"))
-    
-    # --- THIS IS THE FIX ---
-    # Removed the backtick ` and extra parenthesis from the original error
     application.add_handler(CallbackQueryHandler(help_handler.back_to_main_help_callback, pattern="^back_to_main_help$"))
-    # --- END OF FIX ---
 
     # --- NEW: START THE JOB QUEUE ---
     job_queue = application.job_queue
