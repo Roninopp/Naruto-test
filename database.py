@@ -2,6 +2,7 @@ import sqlite3
 import logging
 import game_logic 
 import cache
+import json # <-- THIS IS THE FIX
 
 logger = logging.getLogger(__name__)
 
@@ -343,6 +344,7 @@ def update_current_spotlight(character_data):
     if conn is None: return
     try:
         cursor = conn.cursor()
+        # This line will now work because 'import json' is at the top
         cursor.execute("UPDATE protecc_spotlight SET value = ? WHERE key = 'current_character'", (json.dumps(character_data),))
         conn.commit()
     except sqlite3.Error as e:
