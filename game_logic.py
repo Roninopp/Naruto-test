@@ -351,3 +351,66 @@ def calculate_taijutsu_damage(attacker, defender):
     
     return final_damage, is_critical
 # --- END OF UPDATES ---
+
+
+# --- NEW: PROTECC MODULE DATA ---
+
+PROTECC_RARITIES = {
+    'common': {'emoji': '⚪', 'ryo': 100, 'weight': 50},
+    'rare': {'emoji': '🔵', 'ryo': 250, 'weight': 30},
+    'epic': {'emoji': '🟣', 'ryo': 500, 'weight': 15},
+    'legendary': {'emoji': '🟡', 'ryo': 1000, 'weight': 5}
+}
+
+# This is our fallback list. We will use this for Phase 1-3.
+# The key (e.g., 'naruto uzumaki') is what the user must type.
+PROTECC_CHARACTERS = {
+    # Common
+    'naruto uzumaki': {
+        'name': 'Naruto Uzumaki', 'rarity': 'common', 'series': 'Naruto', 
+        'image': 'https://s4.anilist.co/file/anilistcdn/character/large/b17-IuFFB2i21YfP.png'
+    },
+    'sakura haruno': {
+        'name': 'Sakura Haruno', 'rarity': 'common', 'series': 'Naruto', 
+        'image': 'https://s4.anilist.co/file/anilistcdn/character/large/b13-iGAvGr23e1B2.png'
+    },
+    'hinata hyuga': {
+        'name': 'Hinata Hyuga', 'rarity': 'common', 'series': 'Naruto', 
+        'image': 'https://s4.anilist.co/file/anilistcdn/character/large/b39-93bMiuRk6Y5c.png'
+    },
+    # Rare
+    'kakashi hatake': {
+        'name': 'Kakashi Hatake', 'rarity': 'rare', 'series': 'Naruto', 
+        'image': 'https://s4.anilist.co/file/anilistcdn/character/large/b15-9p2qY8d6yERE.png'
+    },
+    'jiraiya': {
+        'name': 'Jiraiya', 'rarity': 'rare', 'series': 'Naruto', 
+        'image': 'https://s4.anilist.co/file/anilistcdn/character/large/b33-KNGbLAq11chb.png'
+    },
+    'gaara': {
+        'name': 'Gaara', 'rarity': 'rare', 'series': 'Naruto', 
+        'image': 'https://s4.anilist.co/file/anilistcdn/character/large/b53-06FuDqfMVgLx.png'
+    },
+    # Epic
+    'itachi uchiha': {
+        'name': 'Itachi Uchiha', 'rarity': 'epic', 'series': 'Naruto Shippuden', 
+        'image': 'https://s4.anilist.co/file/anilistcdn/character/large/b14-8o4EWuCr0s2E.png'
+    },
+    'pain': {
+        'name': 'Pain', 'rarity': 'epic', 'series': 'Naruto Shippuden', 
+        'image': 'https://s4.anilist.co/file/anilistcdn/character/large/b119-nUa30gR8i1tY.png'
+    },
+    'orochimaru': {
+        'name': 'Orochimaru', 'rarity': 'epic', 'series': 'Naruto', 
+        'image': 'https://s4.anilist.co/file/anilistcdn/character/large/b34-E1fW0CRnJgA5.png'
+    },
+    # Legendary
+    'madara uchiha': {
+        'name': 'Madara Uchiha', 'rarity': 'legendary', 'series': 'Naruto Shippuden', 
+        'image': 'https://s4.anilist.co/file/anilistcdn/character/large/b139-4dne8s0Ggv16.png'
+    },
+    'hashirama senju': {
+        'name': 'Hashirama Senju', 'rarity': 'legendary', 'series': 'Naruto Shippuden', 
+        'image': 'https://s4.anilist.co/file/anilistcdn/character/large/b140-5712HjBCSyaA.png'
+    }
+}
