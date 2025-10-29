@@ -1,5 +1,8 @@
 import logging
 import json
+import random 
+import asyncio # <-- NEW: For the job queue loop
+from datetime import timedelta 
 
 # Setup Logging FIRST
 logging.basicConfig(
@@ -26,12 +29,67 @@ import battle
 import cache
 import shop
 import help_handler 
+import protecc # <-- NEW: Import the protecc module
 
 # --- Constants ---
 BOT_TOKEN = "8400754472:AAFzBj_SsUh7BAuIcBO27kHPxQ9W3KnFZpQ" 
-# --- USE YOUR NEW START IMAGE URL ---
 START_IMAGE_URL = "https://envs.sh/r6z.jpg" 
-# Help image URL is now in help_handler.py
+
+# --- REMOVED TARGET_CHAT_ID ---
+
+# --- NEW: Protecc Auto-Post Function (Updated) ---
+async def post_new_character(context: ContextTypes.DEFAULT_TYPE):
+    """Fetches a random character and posts it to all enabled chats."""
+    logger.info("PROTECC JOB: Running...")
+    
+    # 1. Get list of all enabled chat IDs from the DB
+    enabled_chat_ids = db.get_all_protecc_chats()
+    if not enabled_chat_ids:
+        logger.info("PROTECC JOB: No enabled chats. Skipping post.")
+        return
+
+    # 2. Pick a random character from the full list in game_logic
+    char_key, char_data = random.choice(list(gl.PROTECC_CHARACTERS.items()))
+    
+    # 3. Add the 'key' (the lowercase name to guess) to the dict
+    spotlight_data = char_data.copy()
+    spotlight_data['key'] = char_key
+    
+    # 4. Save this as the *new* current character in the DB
+    db.update_current_spotlight(spotlight_data)
+    logger.info(f"PROTECC JOB: New spotlight set to {spotlight_data['name']}")
+
+    # 5. Prepare the message caption
+    rarity_info = gl.PROTECC_RARITIES[spotlight_data['rarity']]
+    caption = (
+        f"🎴 <b>Character Spotlight!</b> 🎴\n\n"
+        f"A new character has appeared! Guess their full name to collect them.\n\n"
+        f"<b>Name:</b> {spotlight_data['name']}\n"
+        f"<b>Rarity:</b> {rarity_info['emoji']} {spotlight_data['rarity'].title()}\n"
+        f"<b>Series:</b> {spotlight_data['series']}\n\n"
+        f"Use: `/proteec <full name>`"
+    )
+
+    # 6. Loop and send to all chats
+    logger.info(f"PROTECC JOB: Sending to {len(enabled_chat_ids)} chats...")
+    for chat_id in enabled_chat_ids:
+        try:
+            await context.bot.send_photo(
+                chat_id=chat_id,
+                photo=spotlight_data['image'],
+                caption=caption,
+                parse_mode="HTML"
+            )
+            # Wait 0.5 seconds between sends to avoid rate-limiting
+            await asyncio.sleep(0.5) 
+            
+        except Exception as e:
+            # If bot is kicked or blocked, it will fail. Log it and continue.
+            logger.error(f"Failed to post spotlight to chat {chat_id}: {e}")
+            # We could add logic here to remove the chat_id if the error is "Forbidden: bot was kicked"
+    
+    logger.info("PROTECC JOB: Finished sending all posts.")
+
 
 # --- Command Handlers (Core) ---
 
@@ -254,10 +312,8 @@ def main():
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("profile", profile_command))
     application.add_handler(CommandHandler("giveexp", give_exp_command))
-    # --- Help command now calls help_handler directly ---
     application.add_handler(CommandHandler("help", help_handler.show_main_help_menu)) 
     
-    # --- Other handlers remain the same ---
     application.add_handler(CommandHandler("missions", missions.missions_command))
     application.add_handler(CallbackQueryHandler(missions.mission_callback, pattern="^mission_"))
     application.add_handler(CommandHandler("train", training.training_command))
@@ -272,10 +328,25 @@ def main():
     application.add_handler(CallbackQueryHandler(shop.shop_buy_callback, pattern="^shop_buy_"))
     application.add_handler(CallbackQueryHandler(village_selection_callback, pattern="^village_"))
     
+    # --- NEW: PROTECC HANDLERS ---
+    application.add_handler(CommandHandler("enable_protecc", protecc.enable_protecc_command))
+    application.add_handler(CommandHandler("proteec", protecc.proteec_command))
+    application.add_handler(CommandHandler("collection", protecc.collection_command))
+    application.add_handler(CommandHandler("proteecstats", protecc.proteec_stats_command))
+    # --- END NEW ---
+
     # --- Help Handler Callbacks (Corrected Prefix) ---
     application.add_handler(CallbackQueryHandler(help_handler.show_main_help_menu, pattern="^show_main_help$")) 
     application.add_handler(CallbackQueryHandler(help_handler.show_module_help, pattern="^help_module_"))
-    application.add_handler(CallbackQueryHandler(help_handler.back_to_main_help_callback, pattern="^back_to_main_help$"))
+    application.add_handler(CallbackQueryH`andler.back_to_main_help_callback, pattern="^back_to_main_help$"))
+
+    # --- NEW: START THE JOB QUEUE ---
+    job_queue = application.job_queue
+    # Run 'post_new_character' every 2 minutes (120 seconds)
+    # first=1 means it runs 1 second after startup for immediate testing
+    job_queue.run_repeating(post_new_character, interval=120, first=1)
+    logger.info("Character spotlight job scheduled for every 2 minutes.")
+    # --- END NEW ---
 
     logger.info("Bot is polling...")
     application.run_polling()
