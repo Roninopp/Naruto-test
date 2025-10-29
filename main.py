@@ -35,7 +35,7 @@ import inventory  # Import inventory module
 
 # --- Constants ---
 # --- !!! IMPORTANT: Use YOUR NEW Bot Token Here !!! ---
-BOT_TOKEN = "7473579334:AAHXaUdj_5U-TjpGbEU-9xuqH1K3mNQeu2g" # Your Bot Token
+BOT_TOKEN = "8400754472:AAGqOme2MQq_Bim_FhO2Fr_DJGuUZrBDsBc" # Your Bot Token
 # --- Make sure the correct token is above ---
 
 START_IMAGE_URL = "https://envs.sh/r6z.jpg"
