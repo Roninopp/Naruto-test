@@ -5,7 +5,8 @@ import asyncio
 import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
-from collections import Counter # <-- NEW: For counting items
+from collections import Counter
+from telegram.error import BadRequest # Import BadRequest
 
 import database as db
 import game_logic as gl
@@ -30,8 +31,9 @@ def get_battle_text(players, turn_player_id):
         p1 = players[player_ids[1]]
         p2 = players[player_ids[0]]
 
-    p1_total_stats = gl.get_total_stats(p1)
-    p2_total_stats = gl.get_total_stats(p2)
+    # Use total stats for display purposes
+    p1_total_stats = p1.get('total_stats', gl.get_total_stats(p1)) # Get cached or recalc
+    p2_total_stats = p2.get('total_stats', gl.get_total_stats(p2))
 
     if turn_player_id == p1['user_id']:
         attacker = p1
@@ -59,18 +61,16 @@ async def send_battle_menu(context: ContextTypes.DEFAULT_TYPE, battle_state, mes
 
     battle_state['base_text'] = text.split("\n\n<b>Turn:")[0]
 
-    # --- THIS IS WHERE THE BUTTON IS DEFINED ---
     keyboard = [
         [
             InlineKeyboardButton("⚔️ Taijutsu", callback_data=f"battle_action_taijutsu_{turn_player_id}"),
             InlineKeyboardButton("🌀 Use Jutsu", callback_data=f"battle_action_jutsu_{turn_player_id}"),
         ],
         [
-             InlineKeyboardButton("🧪 Use Item", callback_data=f"battle_action_item_{turn_player_id}"), # It's here!
+             InlineKeyboardButton("🧪 Use Item", callback_data=f"battle_action_item_{turn_player_id}"),
              InlineKeyboardButton("🏃 Flee", callback_data=f"battle_action_flee_{turn_player_id}")
         ]
     ]
-    # --- END BUTTON DEFINITION ---
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     try:
@@ -91,18 +91,19 @@ async def send_battle_menu(context: ContextTypes.DEFAULT_TYPE, battle_state, mes
                 parse_mode="HTML"
             )
             return message.message_id
+    except BadRequest as e:
+         # Ignore "message is not modified" error
+         if "message is not modified" not in str(e).lower():
+              logger.error(f"Error sending/editing battle menu: {e}")
+         return message_id # Return existing ID even if not modified
     except Exception as e:
-        logger.error(f"Error sending battle menu: {e}")
-        # Log error but try to continue; maybe return existing ID if edit failed
-        if isinstance(e, BadRequest) and "message is not modified" in str(e).lower():
-             return message_id # Ignore "not modified" error
-        # Re-raise other errors or return None? For now, just return existing.
+        logger.error(f"Unexpected error sending battle menu: {e}")
         return message_id
 
 
 async def end_battle(context: ContextTypes.DEFAULT_TYPE, battle_id, winner_id, loser_id, chat_id, message_id, fled=False):
     """Cleans up the battle, updates DB, and announces winner."""
-    # (No changes needed in this function)
+
     battle_state = ACTIVE_BATTLES.pop(battle_id, None)
     if not battle_state: return
 
@@ -114,15 +115,13 @@ async def end_battle(context: ContextTypes.DEFAULT_TYPE, battle_id, winner_id, l
     else:
         text = f"🏆 <b>{winner['username']}</b> is victorious! 🏆\n{loser['username']} has been defeated."
 
-    # Use try-except for final edit, as message might be deleted
     try:
         await context.bot.edit_message_text(
             chat_id=chat_id, message_id=message_id, text=text,
             reply_markup=None, parse_mode="HTML"
         )
     except Exception as e:
-        logger.warning(f"Could not edit final battle message (maybe deleted?): {e}")
-        # Send as new message if edit fails
+        logger.warning(f"Could not edit final battle message: {e}")
         await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
 
 
@@ -130,37 +129,51 @@ async def end_battle(context: ContextTypes.DEFAULT_TYPE, battle_id, winner_id, l
     winner_exp_gain = loser['level'] * 10
     winner_ryo_gain = loser['level'] * 20
 
+    # Update winner dict locally
     winner['wins'] += 1
     winner['battle_cooldown'] = cooldown_time
     winner['exp'] += winner_exp_gain
     winner['total_exp'] += winner_exp_gain
     winner['ryo'] += winner_ryo_gain
 
-    final_winner_data, leveled_up, messages = gl.check_for_level_up(winner)
-    db.update_player(winner_id, final_winner_data)
+    # Check for level up using the updated winner dict
+    final_winner_data_dict, leveled_up, messages = gl.check_for_level_up(winner)
 
+    # --- THIS IS THE FIX ---
+    # Before saving, remove the temporary 'total_stats' key if it exists
+    final_winner_data_dict.pop('total_stats', None)
+    # --- END OF FIX ---
+
+    # Save the cleaned winner data
+    db.update_player(winner_id, final_winner_data_dict)
+
+    # Update loser dict locally
     loser['losses'] += 1
     loser['battle_cooldown'] = cooldown_time
+    # Recalculate loser's max HP based on their potentially updated stats (if needed)
     loser_total_stats = gl.get_total_stats(loser)
     loser['max_hp'] = loser_total_stats['max_hp']
-    loser['current_hp'] = 1
+    loser['current_hp'] = 1 # Set HP to 1 after defeat
 
+    # Prepare loser updates for DB
     loser_updates = {
-        'losses': loser['losses'], 'battle_cooldown': loser['battle_cooldown'],
-        'current_hp': loser['current_hp'], 'max_hp': loser['max_hp']
+        'losses': loser['losses'],
+        'battle_cooldown': loser['battle_cooldown'],
+        'current_hp': loser['current_hp'],
+        'max_hp': loser['max_hp']
     }
     db.update_player(loser_id, loser_updates)
 
+    # Send reward message
     reward_text = f"<b>{winner['username']}</b> gained +{winner_exp_gain} EXP and +{winner_ryo_gain} Ryo!"
     if leveled_up:
         reward_text += "\n\n" + "\n".join(messages)
     await context.bot.send_message(chat_id=chat_id, text=reward_text, parse_mode="HTML")
 
 
-# --- Command Handlers ---
-
+# --- Command Handlers (battle_command - no changes) ---
 async def battle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # (No changes needed in this function)
+    # ... (code is the same) ...
     challenger = update.effective_user
     if not update.message.reply_to_message:
         await update.message.reply_text("To challenge someone, you must reply to one of their messages and type /battle.")
@@ -186,10 +199,9 @@ async def battle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if now < cooldown_time:
                     remaining = (cooldown_time - now).seconds // 60 + 1
                     await update.message.reply_text(f"{player['username']} is on battle cooldown for {remaining} more minute(s)."); return
-            except ValueError: # Handle potential invalid isoformat string in DB
+            except ValueError:
                  logger.warning(f"Invalid cooldown format for user {player['user_id']}. Resetting.")
-                 db.update_player(player['user_id'], {'battle_cooldown': None}) # Clear invalid cooldown
-
+                 db.update_player(player['user_id'], {'battle_cooldown': None})
 
     BATTLE_INVITES[p2['user_id']] = p1['user_id']
     text = f"<b>{p2['username']}!</b>\n{p1['username']} has challenged you to a battle!"
@@ -199,10 +211,9 @@ async def battle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]]
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
 
-# --- Callback Handlers ---
-
+# --- Callback Handlers (battle_invite_callback - no changes) ---
 async def battle_invite_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # (No changes needed in this function)
+    # ... (code is the same) ...
     query = update.callback_query; await query.answer()
     parts = query.data.split('_'); action = parts[2]; challenger_id_str = parts[3]
     challenger_id = int(challenger_id_str); challenged_id = query.from_user.id
@@ -212,6 +223,7 @@ async def battle_invite_callback(update: Update, context: ContextTypes.DEFAULT_T
     if action == "decline": await query.edit_message_text(f"{challenged['username']} has declined the battle challenge from {challenger['username']}.", reply_markup=None); return
     if not challenger or not challenged: await query.edit_message_text("Error: One of the players could not be found.", reply_markup=None); return
     p1 = dict(challenger); p2 = dict(challenged)
+    # Store total stats at start of battle
     p1['total_stats'] = gl.get_total_stats(p1); p2['total_stats'] = gl.get_total_stats(p2)
     if p1['total_stats']['speed'] > p2['total_stats']['speed']: turn_player_id = p1['user_id']
     elif p2['total_stats']['speed'] > p1['total_stats']['speed']: turn_player_id = p2['user_id']
@@ -222,21 +234,18 @@ async def battle_invite_callback(update: Update, context: ContextTypes.DEFAULT_T
     message_id = await send_battle_menu(context, battle_state, message_id=query.message.message_id)
     ACTIVE_BATTLES[battle_id]['message_id'] = message_id
 
-
+# --- battle_action_callback, battle_jutsu_callback, battle_item_callback ---
+# (No changes needed in these functions from the previous version)
 async def battle_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles main battle actions: Taijutsu, Jutsu, Flee, AND ITEM"""
+    # ... (code is the same) ...
     query = update.callback_query; await query.answer()
     parts = query.data.split('_'); action = parts[2]; player_id_str = parts[3]
     player_id = int(player_id_str)
 
     battle_id = None
     for bid, bstate in ACTIVE_BATTLES.items():
-        # Check both parts of the battle_id string for the player_id
         if f"{player_id}_vs_" in bid or f"_vs_{player_id}" in bid:
-             # Ensure the player is actually in THIS battle's state
-             if player_id in bstate.get('players', {}):
-                 battle_id = bid
-                 break
+             if player_id in bstate.get('players', {}): battle_id = bid; break
     if not battle_id: await query.edit_message_text("This battle is no longer active.", reply_markup=None); return
 
     battle_state = ACTIVE_BATTLES[battle_id]
@@ -267,17 +276,14 @@ async def battle_action_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     if action == "jutsu":
-        # Check Level 5 requirement for accessing Jutsus IN BATTLE
-        if attacker['level'] < 5: # Assuming Level 5 is the general requirement
+        if attacker['level'] < 5:
             await query.answer("You must be at least Level 5 to use jutsus in battle!", show_alert=True)
-            await send_battle_menu(context, battle_state, message_id); return # Show menu again
-
+            await send_battle_menu(context, battle_state, message_id); return
         try: known_jutsus = json.loads(attacker.get('known_jutsus', '[]'))
         except: known_jutsus = []
         if not known_jutsus:
             await query.answer("You don't know any jutsus! Use /combine to learn some.", show_alert=True)
             await send_battle_menu(context, battle_state, message_id); return
-
         keyboard = []
         for jutsu_name_key in known_jutsus:
             jutsu_info = gl.JUTSU_LIBRARY.get(jutsu_name_key)
@@ -291,35 +297,28 @@ async def battle_action_callback(update: Update, context: ContextTypes.DEFAULT_T
     if action == "item":
         try: inventory_list = json.loads(attacker.get('inventory', '[]'))
         except: inventory_list = []
-
         if not inventory_list:
             await query.answer("Your inventory is empty!", show_alert=True)
             await send_battle_menu(context, battle_state, message_id); return
-
         item_counts = Counter(inventory_list)
         usable_items = {}
         for item_key, count in item_counts.items():
             item_info = gl.SHOP_INVENTORY.get(item_key)
             if item_info and item_info['type'] == 'consumable':
                  usable_items[item_key] = item_info
-
         if not usable_items:
              await query.answer("You have no usable items in your inventory!", show_alert=True)
              await send_battle_menu(context, battle_state, message_id); return
-
         keyboard = []
         for item_key, item_info in usable_items.items():
              button_text = f"{item_info['name']} (x{item_counts[item_key]})"
              keyboard.append([InlineKeyboardButton(button_text, callback_data=f"battle_item_{player_id}_{item_key}")])
-
         keyboard.append([InlineKeyboardButton("Cancel", callback_data=f"battle_item_{player_id}_cancel")])
-
         await anim.edit_battle_message(context, battle_state, f"{battle_state['base_text']}\n\nSelect an item to use:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
 
-
 async def battle_jutsu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # (No changes needed in this function)
+    # ... (code is the same) ...
     query = update.callback_query; await query.answer()
     parts = query.data.split('_'); player_id = int(parts[2]); jutsu_key = "_".join(parts[3:])
     battle_id = None
@@ -349,58 +348,38 @@ async def battle_jutsu_callback(update: Update, context: ContextTypes.DEFAULT_TY
     return
 
 async def battle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the player's item selection during battle."""
-    query = update.callback_query
-    await query.answer()
-
-    parts = query.data.split('_')
-    player_id = int(parts[2])
-    item_key = "_".join(parts[3:])
-
+    # ... (code is the same) ...
+    query = update.callback_query; await query.answer()
+    parts = query.data.split('_'); player_id = int(parts[2]); item_key = "_".join(parts[3:])
     battle_id = None
     for bid, bstate in ACTIVE_BATTLES.items():
         if f"{player_id}_vs_" in bid or f"_vs_{player_id}" in bid:
              if player_id in bstate.get('players', {}): battle_id = bid; break
     if not battle_id: await query.edit_message_text("This battle is no longer active.", reply_markup=None); return
-
     battle_state = ACTIVE_BATTLES[battle_id]
-
     if battle_state['turn'] != player_id: await query.answer("It's not your turn!", show_alert=True); return
-
     chat_id = battle_state['chat_id']; message_id = battle_state['message_id']
-
-    if item_key == "cancel":
-        await send_battle_menu(context, battle_state, message_id); return
-
+    if item_key == "cancel": await send_battle_menu(context, battle_state, message_id); return
     attacker = battle_state['players'][player_id]
     defender_id = [pid for pid in battle_state['players'] if pid != player_id][0]
-
     item_info = gl.SHOP_INVENTORY.get(item_key)
     if not item_info or item_info['type'] != 'consumable':
         await query.message.reply_text("Error: Invalid item selected.")
         await send_battle_menu(context, battle_state, message_id); return
-
     try: inventory_list = json.loads(attacker.get('inventory', '[]'))
     except: inventory_list = []
-
     if item_key not in inventory_list:
         await query.answer("You don't have that item!", show_alert=True)
         await send_battle_menu(context, battle_state, message_id); return
-
     await anim.edit_battle_message(context, battle_state, f"{battle_state['base_text']}\n\n<i>Using {item_info['name']}...</i>", reply_markup=None)
-
     inventory_list.remove(item_key)
-
-    item_effect_text = ""
-    updates_to_save = {'inventory': json.dumps(inventory_list)}
-
+    item_effect_text = ""; updates_to_save = {'inventory': json.dumps(inventory_list)}
     if item_key == 'health_potion':
         heal_amount = item_info['stats']['heal']
         attacker_total_stats = gl.get_total_stats(attacker)
         max_hp = attacker_total_stats['max_hp']
         hp_missing = max_hp - attacker['current_hp']
         actual_heal = min(heal_amount, hp_missing)
-
         if actual_heal <= 0:
              item_effect_text = "Your HP is already full!"
              await query.answer("HP is full!", show_alert=True)
@@ -410,12 +389,9 @@ async def battle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             attacker['current_hp'] += actual_heal
             updates_to_save['current_hp'] = attacker['current_hp']
             item_effect_text = f"🧪 Used {item_info['name']}! Recovered {actual_heal} HP."
-
     db.update_player(player_id, updates_to_save)
-
     await anim.edit_battle_message(context, battle_state, f"{battle_state['base_text']}\n\n<i>{item_effect_text}</i>")
     await asyncio.sleep(2.5)
-
     battle_state['turn'] = defender_id
     await send_battle_menu(context, battle_state, message_id)
     return
