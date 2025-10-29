@@ -99,8 +99,8 @@ def create_tables():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             equipment TEXT DEFAULT '{}',
             inventory TEXT DEFAULT '[]',
-            daily_train_count INTEGER DEFAULT 0,      -- FIX: NEW Column
-            last_train_reset_date TEXT DEFAULT NULL   -- FIX: NEW Column
+            daily_train_count INTEGER DEFAULT 0,
+            last_train_reset_date TEXT DEFAULT NULL
         );
         """)
         
@@ -125,6 +125,40 @@ def create_tables():
             fought_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
         """)
+        
+        # --- NEW: PROTECC MODULE TABLES ---
+        
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS protecc_spotlight (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+        """)
+        # We will use one row in protecc_spotlight to store the current character
+        cursor.execute("INSERT OR IGNORE INTO protecc_spotlight (key, value) VALUES ('current_character', NULL);")
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS protecc_collection (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            character_name TEXT NOT NULL,
+            rarity TEXT NOT NULL,
+            first_collected_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            times_collected INTEGER DEFAULT 1,
+            UNIQUE(user_id, character_name)
+        );
+        """)
+        
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS protecc_stats (
+            user_id INTEGER PRIMARY KEY,
+            total_collected INTEGER DEFAULT 0,
+            unique_collected INTEGER DEFAULT 0,
+            total_ryo_earned INTEGER DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES players (user_id)
+        );
+        """)
+        # --- END OF NEW TABLES ---
         
         conn.commit()
         logger.info("Database tables checked/created successfully.")
@@ -190,7 +224,7 @@ def create_player(user_id, username, village):
             INSERT INTO players 
             (user_id, username, village, max_hp, current_hp, max_chakra, current_chakra, 
              strength, speed, intelligence, stamina, equipment, inventory,
-             daily_train_count, last_train_reset_date) -- FIX: Add new columns
+             daily_train_count, last_train_reset_date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (user_id, username, village, 
@@ -199,8 +233,16 @@ def create_player(user_id, username, village):
              initial_stats['strength'], initial_stats['speed'], 
              initial_stats['intelligence'], initial_stats['stamina'],
              '{}', '[]',
-             0, None) # --- FIX: Removed the invalid SQL-style comment ---
+             0, None)
         )
+        
+        # --- NEW: Create entry in protecc_stats ---
+        cursor.execute(
+            "INSERT INTO protecc_stats (user_id, total_collected, unique_collected, total_ryo_earned) VALUES (?, 0, 0, 0)",
+            (user_id,)
+        )
+        # --- END NEW ---
+        
         conn.commit()
         logger.info(f"New player created: {username} (ID: {user_id}) in {village}")
         
@@ -244,6 +286,69 @@ def update_player(user_id, updates):
     finally:
         conn.close()
 
+# --- NEW: Specific Database functions for Protecc ---
+
+def get_protecc_stats(user_id):
+    """Fetches a player's collection stats."""
+    conn = get_db_connection()
+    if conn is None: return None
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM protecc_stats WHERE user_id = ?", (user_id,))
+        stats_row = cursor.fetchone()
+        return dict(stats_row) if stats_row else None
+    except sqlite3.Error as e:
+        logger.error(f"Error fetching protecc_stats for {user_id}: {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_player_collection(user_id):
+    """Fetches all collected characters for a player."""
+    conn = get_db_connection()
+    if conn is None: return []
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT character_name, rarity, times_collected FROM protecc_collection WHERE user_id = ? ORDER BY rarity", (user_id,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    except sqlite3.Error as e:
+        logger.error(f"Error fetching protecc_collection for {user_id}: {e}")
+        return []
+    finally:
+        conn.close()
+
+def get_current_spotlight():
+    """Gets the currently posted character from the DB."""
+    conn = get_db_connection()
+    if conn is None: return None
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM protecc_spotlight WHERE key = 'current_character'")
+        row = cursor.fetchone()
+        if row and row['value']:
+            return json.loads(row['value'])
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Error getting current_spotlight: {e}")
+        return None
+    finally:
+        conn.close()
+
+def update_current_spotlight(character_data):
+    """Saves the new character to the DB."""
+    conn = get_db_connection()
+    if conn is None: return
+    try:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE protecc_spotlight SET value = ? WHERE key = 'current_character'", (json.dumps(character_data),))
+        conn.commit()
+    except sqlite3.Error as e:
+        logger.error(f"Error updating current_spotlight: {e}")
+    finally:
+        conn.close()
+
+# --- END OF NEW FUNCTIONS ---
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
