@@ -126,7 +126,7 @@ def create_tables():
         );
         """)
         
-        # --- NEW: PROTECC MODULE TABLES ---
+        # --- PROTECC MODULE TABLES ---
         
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS protecc_spotlight (
@@ -134,7 +134,6 @@ def create_tables():
             value TEXT
         );
         """)
-        # We will use one row in protecc_spotlight to store the current character
         cursor.execute("INSERT OR IGNORE INTO protecc_spotlight (key, value) VALUES ('current_character', NULL);")
 
         cursor.execute("""
@@ -158,6 +157,15 @@ def create_tables():
             FOREIGN KEY (user_id) REFERENCES players (user_id)
         );
         """)
+        
+        # --- NEW: TABLE FOR ENABLED CHATS ---
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS protecc_enabled_chats (
+            chat_id INTEGER PRIMARY KEY,
+            enabled_by_user_id INTEGER,
+            enabled_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
         # --- END OF NEW TABLES ---
         
         conn.commit()
@@ -177,11 +185,9 @@ def get_player(user_id):
     
     cached_player = cache.get_player_cache(user_id)
     if cached_player:
-        # Check if cache is up-to-date (has new columns)
         if 'equipment' in cached_player:
             return cached_player
         else:
-            # Cache is old, clear it and fetch from DB
             cache.clear_player_cache(user_id)
             
     conn = get_db_connection()
@@ -236,12 +242,10 @@ def create_player(user_id, username, village):
              0, None)
         )
         
-        # --- NEW: Create entry in protecc_stats ---
         cursor.execute(
-            "INSERT INTO protecc_stats (user_id, total_collected, unique_collected, total_ryo_earned) VALUES (?, 0, 0, 0)",
+            "INSERT OR IGNORE INTO protecc_stats (user_id, total_collected, unique_collected, total_ryo_earned) VALUES (?, 0, 0, 0)",
             (user_id,)
         )
-        # --- END NEW ---
         
         conn.commit()
         logger.info(f"New player created: {username} (ID: {user_id}) in {village}")
@@ -264,8 +268,6 @@ def update_player(user_id, updates):
         return False
 
     try:
-        # If the 'updates' is a full player dict, we use all keys
-        # If it's a small update dict, this also works
         set_clause = ", ".join([f"{key} = ?" for key in updates.keys()])
         values = list(updates.values())
         values.append(user_id)
@@ -286,7 +288,7 @@ def update_player(user_id, updates):
     finally:
         conn.close()
 
-# --- NEW: Specific Database functions for Protecc ---
+# --- Specific Database functions for Protecc ---
 
 def get_protecc_stats(user_id):
     """Fetches a player's collection stats."""
@@ -348,7 +350,39 @@ def update_current_spotlight(character_data):
     finally:
         conn.close()
 
+# --- NEW: Functions for enabled chats ---
+
+def enable_protecc_chat(chat_id, user_id):
+    """Adds a chat to the enabled list."""
+    conn = get_db_connection()
+    if conn is None: return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO protecc_enabled_chats (chat_id, enabled_by_user_id) VALUES (?, ?)", (chat_id, user_id))
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Error enabling protecc for chat {chat_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_all_protecc_chats():
+    """Gets a list of all chat IDs where protecc is enabled."""
+    conn = get_db_connection()
+    if conn is None: return []
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT chat_id FROM protecc_enabled_chats")
+        rows = cursor.fetchall()
+        return [row['chat_id'] for row in rows] # Return a simple list of IDs
+    except sqlite3.Error as e:
+        logger.error(f"Error getting all protecc chats: {e}")
+        return []
+    finally:
+        conn.close()
 # --- END OF NEW FUNCTIONS ---
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
