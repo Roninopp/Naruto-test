@@ -52,20 +52,23 @@ async def enable_world_boss_command(update: Update, context: ContextTypes.DEFAUL
 
     if success:
         logger.info(f"World Boss game enabled for chat {chat.id} by user {user.id}")
+        # --- THIS IS THE FIX ---
         await update.message.reply_text(
             "✅ 👹 **World Boss Enabled!** 👹 ✅\n\n"
             "This group will now be included in World Boss spawns.\n"
-            "The next boss will appear on the next scheduled spawn (every 6 hours).",
+            "The next boss will appear on the next scheduled spawn (every **1 hour**).", # Changed 6 hours to 1 hour
             parse_mode="HTML"
         )
+        # --- END FIX ---
     else:
         await update.message.reply_text("A database error occurred. Please try again.")
 
 
 # --- Player Commands ---
+# ... (rest of the file remains exactly the same) ...
 
 async def boss_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Displays the current status of the world boss in this chat."""
+    # ... (code is the same) ...
     chat_id = update.effective_chat.id
     boss_status = db.get_boss_status(chat_id)
 
@@ -99,7 +102,7 @@ async def boss_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def boss_taijutsu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the player's Taijutsu attack against the boss."""
+    # ... (code is the same) ...
     user = update.effective_user
     chat_id = update.effective_chat.id
     player_data = db.get_player(user.id)
@@ -184,7 +187,7 @@ async def boss_taijutsu_command(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def boss_jutsu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Shows the player's known jutsus to use against the boss."""
+    # ... (code is the same) ...
     user = update.effective_user
     chat_id = update.effective_chat.id
     player_data = db.get_player(user.id)
@@ -252,7 +255,7 @@ async def boss_jutsu_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # --- Callback Handlers ---
 
 async def boss_jutsu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the button press for using a specific jutsu."""
+    # ... (code is the same) ...
     query = update.callback_query
     await query.answer()
 
@@ -374,7 +377,7 @@ async def boss_jutsu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
 # --- Helper Functions ---
 
 def _check_cooldown(player_data, cooldown_duration_seconds):
-    """Checks if the player's boss attack cooldown has passed."""
+    # ... (code is the same) ...
     cooldown_str = player_data.get('boss_attack_cooldown')
     if not cooldown_str:
         return True, 0 # No cooldown set, can attack
@@ -401,12 +404,8 @@ def _check_cooldown(player_data, cooldown_duration_seconds):
     else:
         return True, 0
 
-
 def _update_boss_and_player_damage(chat_id, user_id, username, damage_dealt, current_boss_status):
-    """
-    Updates boss HP and player damage in the database transactionally.
-    Returns (boss_defeated, new_boss_hp).
-    """
+    # ... (code is the same) ...
     conn = db.get_db_connection()
     if conn is None:
         logger.error("Database connection failed during boss update.")
@@ -452,7 +451,7 @@ def _update_boss_and_player_damage(chat_id, user_id, username, damage_dealt, cur
 
 
 def _get_top_damage_dealers(chat_id, limit=5):
-    """Gets the top damage dealers for the current boss in a chat."""
+    # ... (code is the same) ...
     conn = db.get_db_connection()
     if conn is None: return []
     try:
@@ -471,7 +470,7 @@ def _get_top_damage_dealers(chat_id, limit=5):
 
 
 async def _process_boss_defeat(context: ContextTypes.DEFAULT_TYPE, chat_id, boss_status, boss_info):
-    """Handles boss defeat, reward calculation, and database cleanup."""
+    # ... (code is the same) ...
     logger.info(f"World Boss {boss_info['name']} defeated in chat {chat_id}!")
 
     # Announce defeat
