@@ -2,14 +2,57 @@ import logging
 import json
 import sqlite3
 import datetime
+import asyncio # <-- NEW: For admin check
 from telegram import Update
 from telegram.ext import ContextTypes
+from telegram.constants import ChatType # <-- NEW: To check if it's a group
 
 # Import our database and game_logic functions
 import database as db
 import game_logic as gl
 
 logger = logging.getLogger(__name__)
+
+# --- NEW: Admin Command ---
+
+async def enable_protecc_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Enables the character spotlight posts for this group."""
+    chat = update.effective_chat
+    user = update.effective_user
+
+    # 1. Check if the command is used in a group or supergroup
+    if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        await update.message.reply_text("This command can only be used in a group chat.")
+        return
+
+    # 2. Check if the user is an admin or the group creator
+    try:
+        chat_admins = await context.bot.get_chat_administrators(chat.id)
+        user_ids = [admin.user.id for admin in chat_admins]
+        
+        if user.id not in user_ids:
+            await update.message.reply_text("You must be a group admin to use this command.")
+            return
+            
+    except Exception as e:
+        logger.error(f"Error checking admin status in chat {chat.id}: {e}")
+        await update.message.reply_text("An error occurred. I might not have permission to see group admins.")
+        return
+
+    # 3. If admin, add the chat to the database
+    success = db.enable_protecc_chat(chat.id, user.id)
+    
+    if success:
+        logger.info(f"Protecc game enabled for chat {chat.id} by user {user.id}")
+        await update.message.reply_text(
+            "✅ <b>Character Spotlights Enabled!</b>\n\n"
+            "This group will now receive new character announcements.\n"
+            "The first one will arrive on the next scheduled post (every 2 minutes for testing).",
+            parse_mode="HTML"
+        )
+    else:
+        await update.message.reply_text("A database error occurred. Please try again.")
+
 
 # --- Command Handlers ---
 
