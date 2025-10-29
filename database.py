@@ -36,6 +36,16 @@ def update_schema():
             cursor.execute("ALTER TABLE players ADD COLUMN discovered_combinations TEXT DEFAULT '[]';")
             logger.info("Database Schema UPDATED: Added 'discovered_combinations' column.")
             
+        # --- FIX: Add training limit columns ---
+        if 'daily_train_count' not in columns:
+            cursor.execute("ALTER TABLE players ADD COLUMN daily_train_count INTEGER DEFAULT 0;")
+            logger.info("Database Schema UPDATED: Added 'daily_train_count' column.")
+        
+        if 'last_train_reset_date' not in columns:
+            cursor.execute("ALTER TABLE players ADD COLUMN last_train_reset_date TEXT DEFAULT NULL;")
+            logger.info("Database Schema UPDATED: Added 'last_train_reset_date' column.")
+        # --- END FIX ---
+            
         conn.commit()
     except sqlite3.Error as e:
         logger.error(f"Error updating database schema: {e}")
@@ -88,7 +98,9 @@ def create_tables():
             battle_cooldown TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             equipment TEXT DEFAULT '{}',
-            inventory TEXT DEFAULT '[]'
+            inventory TEXT DEFAULT '[]',
+            daily_train_count INTEGER DEFAULT 0,      -- FIX: NEW Column
+            last_train_reset_date TEXT DEFAULT NULL   -- FIX: NEW Column
         );
         """)
         
@@ -177,15 +189,17 @@ def create_player(user_id, username, village):
             """
             INSERT INTO players 
             (user_id, username, village, max_hp, current_hp, max_chakra, current_chakra, 
-             strength, speed, intelligence, stamina, equipment, inventory) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             strength, speed, intelligence, stamina, equipment, inventory,
+             daily_train_count, last_train_reset_date) -- FIX: Add new columns
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (user_id, username, village, 
              initial_stats['max_hp'], initial_stats['max_hp'],
              initial_stats['max_chakra'], initial_stats['max_chakra'],
              initial_stats['strength'], initial_stats['speed'], 
              initial_stats['intelligence'], initial_stats['stamina'],
-             '{}', '[]') # Add defaults for new columns
+             '{}', '[]',
+             0, None) -- FIX: Add default values for new columns
         )
         conn.commit()
         logger.info(f"New player created: {username} (ID: {user_id}) in {village}")
