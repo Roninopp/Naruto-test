@@ -357,10 +357,10 @@ def main():
 
     # --- NEW: START THE BOSS SPAWN JOB QUEUE ---
     job_queue = application.job_queue
-    # Run 'spawn_world_boss' every 2 minutes (120 seconds) for testing
-    # first=1 means it runs 1 second after startup for immediate testing
-    job_queue.run_repeating(spawn_world_boss, interval=120, first=1)
-    logger.info("World Boss spawn job scheduled for every 2 minutes.")
+    # Run 'spawn_world_boss' every 1 hour (3600 seconds)
+    # first=1 means it runs 1 second after startup
+    job_queue.run_repeating(spawn_world_boss, interval=3600, first=1) # <-- Changed interval to 3600
+    logger.info("World Boss spawn job scheduled for every 1 hour.")
     # --- END NEW ---
 
     logger.info("Bot is polling...")
