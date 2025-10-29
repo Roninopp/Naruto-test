@@ -2,7 +2,7 @@ import sqlite3
 import logging
 import game_logic 
 import cache
-import json # <-- THIS IS THE FIX
+import json # <-- Kept this import, it's needed for other things
 
 logger = logging.getLogger(__name__)
 
@@ -127,48 +127,6 @@ def create_tables():
         );
         """)
         
-        # --- PROTECC MODULE TABLES ---
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS protecc_spotlight (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        );
-        """)
-        cursor.execute("INSERT OR IGNORE INTO protecc_spotlight (key, value) VALUES ('current_character', NULL);")
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS protecc_collection (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            character_name TEXT NOT NULL,
-            rarity TEXT NOT NULL,
-            first_collected_at TEXT DEFAULT CURRENT_TIMESTAMP,
-            times_collected INTEGER DEFAULT 1,
-            UNIQUE(user_id, character_name)
-        );
-        """)
-        
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS protecc_stats (
-            user_id INTEGER PRIMARY KEY,
-            total_collected INTEGER DEFAULT 0,
-            unique_collected INTEGER DEFAULT 0,
-            total_ryo_earned INTEGER DEFAULT 0,
-            FOREIGN KEY (user_id) REFERENCES players (user_id)
-        );
-        """)
-        
-        # --- NEW: TABLE FOR ENABLED CHATS ---
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS protecc_enabled_chats (
-            chat_id INTEGER PRIMARY KEY,
-            enabled_by_user_id INTEGER,
-            enabled_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-        """)
-        # --- END OF NEW TABLES ---
-        
         conn.commit()
         logger.info("Database tables checked/created successfully.")
         
@@ -243,11 +201,6 @@ def create_player(user_id, username, village):
              0, None)
         )
         
-        cursor.execute(
-            "INSERT OR IGNORE INTO protecc_stats (user_id, total_collected, unique_collected, total_ryo_earned) VALUES (?, 0, 0, 0)",
-            (user_id,)
-        )
-        
         conn.commit()
         logger.info(f"New player created: {username} (ID: {user_id}) in {village}")
         
@@ -288,103 +241,6 @@ def update_player(user_id, updates):
         return False
     finally:
         conn.close()
-
-# --- Specific Database functions for Protecc ---
-
-def get_protecc_stats(user_id):
-    """Fetches a player's collection stats."""
-    conn = get_db_connection()
-    if conn is None: return None
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM protecc_stats WHERE user_id = ?", (user_id,))
-        stats_row = cursor.fetchone()
-        return dict(stats_row) if stats_row else None
-    except sqlite3.Error as e:
-        logger.error(f"Error fetching protecc_stats for {user_id}: {e}")
-        return None
-    finally:
-        conn.close()
-
-def get_player_collection(user_id):
-    """Fetches all collected characters for a player."""
-    conn = get_db_connection()
-    if conn is None: return []
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT character_name, rarity, times_collected FROM protecc_collection WHERE user_id = ? ORDER BY rarity", (user_id,))
-        rows = cursor.fetchall()
-        return [dict(row) for row in rows]
-    except sqlite3.Error as e:
-        logger.error(f"Error fetching protecc_collection for {user_id}: {e}")
-        return []
-    finally:
-        conn.close()
-
-def get_current_spotlight():
-    """Gets the currently posted character from the DB."""
-    conn = get_db_connection()
-    if conn is None: return None
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT value FROM protecc_spotlight WHERE key = 'current_character'")
-        row = cursor.fetchone()
-        if row and row['value']:
-            return json.loads(row['value'])
-        return None
-    except sqlite3.Error as e:
-        logger.error(f"Error getting current_spotlight: {e}")
-        return None
-    finally:
-        conn.close()
-
-def update_current_spotlight(character_data):
-    """Saves the new character to the DB."""
-    conn = get_db_connection()
-    if conn is None: return
-    try:
-        cursor = conn.cursor()
-        # This line will now work because 'import json' is at the top
-        cursor.execute("UPDATE protecc_spotlight SET value = ? WHERE key = 'current_character'", (json.dumps(character_data),))
-        conn.commit()
-    except sqlite3.Error as e:
-        logger.error(f"Error updating current_spotlight: {e}")
-    finally:
-        conn.close()
-
-# --- NEW: Functions for enabled chats ---
-
-def enable_protecc_chat(chat_id, user_id):
-    """Adds a chat to the enabled list."""
-    conn = get_db_connection()
-    if conn is None: return False
-    try:
-        cursor = conn.cursor()
-        cursor.execute("INSERT OR IGNORE INTO protecc_enabled_chats (chat_id, enabled_by_user_id) VALUES (?, ?)", (chat_id, user_id))
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        logger.error(f"Error enabling protecc for chat {chat_id}: {e}")
-        return False
-    finally:
-        conn.close()
-
-def get_all_protecc_chats():
-    """Gets a list of all chat IDs where protecc is enabled."""
-    conn = get_db_connection()
-    if conn is None: return []
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT chat_id FROM protecc_enabled_chats")
-        rows = cursor.fetchall()
-        return [row['chat_id'] for row in rows] # Return a simple list of IDs
-    except sqlite3.Error as e:
-        logger.error(f"Error getting all protecc chats: {e}")
-        return []
-    finally:
-        conn.close()
-# --- END OF NEW FUNCTIONS ---
-
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
