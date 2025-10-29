@@ -28,7 +28,7 @@ import shop
 import help_handler 
 
 # --- Constants ---
-BOT_TOKEN = "7473579334:AAHXaUdj_5U-TjpGbEU-9xuqH1K3mNQeu2g" 
+BOT_TOKEN = "8400754472:AAFzBj_SsUh7BAuIcBO27kHPxQ9W3KnFZpQ" 
 # --- USE YOUR NEW START IMAGE URL ---
 START_IMAGE_URL = "https://envs.sh/r6z.jpg" 
 # Help image URL is now in help_handler.py
