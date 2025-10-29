@@ -199,7 +199,7 @@ def create_player(user_id, username, village):
              initial_stats['strength'], initial_stats['speed'], 
              initial_stats['intelligence'], initial_stats['stamina'],
              '{}', '[]',
-             0, None) -- FIX: Add default values for new columns
+             0, None) # --- FIX: Removed the invalid SQL-style comment ---
         )
         conn.commit()
         logger.info(f"New player created: {username} (ID: {user_id}) in {village}")
