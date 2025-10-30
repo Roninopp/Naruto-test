@@ -7,15 +7,19 @@ from telegram.error import BadRequest
 import game_logic as gl
 
 logger = logging.getLogger(__name__)
-KUNAI_EMOJI = "\U0001FA9A" # <-- FIX for broken emoji
+KUNAI_EMOJI = "\U0001FA9A" 
 
-# --- Animation Helper (Handles Captions - unchanged) ---
+# --- Animation Helper (Handles Captions) ---
 async def edit_battle_message(context: ContextTypes.DEFAULT_TYPE, battle_state, text, reply_markup=None):
-    # (code is the same as previous correct version)
+    """A safe way to edit the battle message, handling both text and photo captions."""
     chat_id = battle_state['chat_id']; message_id = battle_state['message_id']
     edit_success = False
+    
     try: # Try caption first
-        await context.bot.edit_message_caption(chat_id=chat_id, message_id=message_id, caption=text, reply_markup=reply_markup, parse_mode="HTML")
+        await context.bot.edit_message_caption(
+            chat_id=chat_id, message_id=message_id, caption=text, 
+            reply_markup=reply_markup, parse_mode="HTML"
+        )
         edit_success = True; return True
     except BadRequest as e:
         error_str = str(e).lower()
@@ -33,7 +37,10 @@ async def edit_battle_message(context: ContextTypes.DEFAULT_TYPE, battle_state, 
 
     if not edit_success: # Fallback: Try editing text
         try:
-            await context.bot.edit_message_text(chat_id=chat_id, message_id=message_id, text=text, reply_markup=reply_markup, parse_mode="HTML")
+            await context.bot.edit_message_text(
+                chat_id=chat_id, message_id=message_id, text=text, 
+                reply_markup=reply_markup, parse_mode="HTML"
+            )
             return True
         except BadRequest as e:
              error_str = str(e).lower()
@@ -49,9 +56,9 @@ async def edit_battle_message(context: ContextTypes.DEFAULT_TYPE, battle_state, 
              else: logger.error(f"Unexpected BadRequest text: {e} ({chat_id}:{message_id})"); return False
         except Exception as e: logger.error(f"Non-BadRequest text: {e} ({chat_id}:{message_id})"); return False
 
-# --- Animation Functions (animate_taijutsu, battle_animation_flow - unchanged) ---
+# --- Animation Functions ---
 async def animate_taijutsu(context, battle_state, attacker, defender, damage, is_crit):
-    # (code is the same)
+    """Animates a simple Taijutsu attack with fewer, slower edits."""
     message_text = battle_state['base_text']
     attack_frame = f"{message_text}\n\n<i>⚔️ {attacker['username']} charges in!</i>"
     await edit_battle_message(context, battle_state, attack_frame); await asyncio.sleep(1.5) 
@@ -65,7 +72,7 @@ async def animate_taijutsu(context, battle_state, attacker, defender, damage, is
     await edit_battle_message(context, battle_state, result_frame); await asyncio.sleep(2.5) 
 
 async def battle_animation_flow(context, battle_state, attacker, defender, jutsu_info, damage_data):
-    # (code is the same)
+    """Controls the full, non-spammy battle animation sequence."""
     damage, is_crit, is_super_eff = damage_data; jutsu_name = jutsu_info['name'].replace('_', ' ').title()
     message_text = battle_state['base_text']; signs = " → ".join(jutsu_info['signs'])
     frame_1 = (f"{message_text}\n\n" f"<i>🌀 {attacker['username']} is using <b>{jutsu_name}</b>!</i>\n" f"<i>🤲 Forming hand signs...\n{signs}</i>")
@@ -85,7 +92,7 @@ async def battle_animation_flow(context, battle_state, attacker, defender, jutsu
     frame_5 = f"{message_text}\n\n{result_text}"
     await edit_battle_message(context, battle_state, frame_5); await asyncio.sleep(3) 
 
-# --- NEW: Throw Kunai Animation ---
+# --- Throw Kunai Animation ---
 async def animate_throw_kunai(context, battle_state, attacker, defender, damage, is_crit):
     """Animates a simple Kunai throw attack."""
     message_text = battle_state['base_text']
@@ -116,4 +123,3 @@ async def animate_throw_kunai(context, battle_state, attacker, defender, damage,
     result_frame = f"{message_text}\n\n{result_text}"
     await edit_battle_message(context, battle_state, result_frame)
     await asyncio.sleep(2.5) # Pause to read the result
-# --- END NEW ---
