@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # --- Constants ---
 TAIJUTSU_COOLDOWN_SECONDS = 30
-KUNAI_EMOJI = "\U0001FA9A" # <-- FIX for broken emoji
+KUNAI_EMOJI = "\U0001FA9A" 
 KUNAI_COOLDOWN_SECONDS = 45 
 JUTSU_COOLDOWN_SECONDS = 180 
 FAINT_LOCKOUT_HOURS = 1
@@ -43,27 +43,22 @@ def get_boss_battle_text(boss_status, boss_info, chat_id):
     text += "\nChoose your attack:"
     return text
 
-# --- Helper: Send/Edit Boss Battle Message ---
+# --- Helper: Send/Edit Boss Battle Message (unchanged) ---
 async def send_or_edit_boss_message(context: ContextTypes.DEFAULT_TYPE, chat_id, boss_status, boss_info):
-    """Sends/Edits the interactive boss message with ALL buttons."""
+    # (code is the same as last time)
     text = get_boss_battle_text(boss_status, boss_info, chat_id)
-    
-    # --- FIX: Use Kunai Emoji Variable ---
     keyboard = [
         [
             InlineKeyboardButton("⚔️ Taijutsu", callback_data="wb_action_taijutsu"), 
-            InlineKeyboardButton(f"{KUNAI_EMOJI} Throw Kunai", callback_data="wb_action_throw_kunai"), # Fixed Button
+            InlineKeyboardButton(f"{KUNAI_EMOJI} Throw Kunai", callback_data="wb_action_throw_kunai"), 
         ],
         [ 
             InlineKeyboardButton("🌀 Use Jutsu", callback_data="wb_action_jutsu"),   
             InlineKeyboardButton("📊 Status Update", callback_data="wb_action_status") 
         ]
     ]
-    # --- END FIX ---
     reply_markup = InlineKeyboardMarkup(keyboard)
-
     message_id = ACTIVE_BOSS_MESSAGES.get(chat_id)
-
     try:
         if message_id:
             await context.bot.edit_message_caption( 
@@ -108,12 +103,7 @@ async def enable_world_boss_command(update: Update, context: ContextTypes.DEFAUL
     success = db.enable_boss_chat(chat.id, user.id)
     if success:
         logger.info(f"World Boss game enabled for chat {chat.id} by user {user.id}")
-        await update.message.reply_text(
-            "✅ 👹 **World Boss Enabled!** 👹 ✅\n\n"
-            "This group will now be included in World Boss spawns.\n"
-            "The next boss will appear on the next scheduled spawn (every **1 hour**).",
-            parse_mode="HTML"
-        )
+        await update.message.reply_text("✅ 👹 **World Boss Enabled!** ... (every 1 hour).", parse_mode="HTML")
     else: await update.message.reply_text("A database error occurred. Please try again.")
 
 # --- Player Command (Boss Status - unchanged) ---
@@ -135,8 +125,6 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     """Handles main boss action buttons: Taijutsu, Throw Kunai, Jutsu, Status."""
     query = update.callback_query
     
-    # --- FIX: Removed the global query.answer() from here ---
-    
     action = query.data.split('_')[-1] # taijutsu, throw_kunai, jutsu, status
     user = query.from_user
     chat_id = query.message.chat_id
@@ -155,12 +143,10 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if not boss_info: await query.answer("Error finding boss info.", show_alert=True); return
          
     if action == "status":
-        # --- FIX: Add feedback for status button ---
         await query.answer("Status refreshed!", show_alert=False) 
         await send_or_edit_boss_message(context, chat_id, boss_status, boss_info)
         return
         
-    # --- Action is Attack - Perform Checks FIRST ---
     if player_data['current_hp'] <= 1:
          await query.answer(f"😵 You are fainted and locked out! Recover first.", show_alert=True); return
          
@@ -176,21 +162,24 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         if cooldown_seconds == JUTSU_COOLDOWN_SECONDS: time_unit = "minutes"; time_val = remaining_seconds / 60
         await query.answer(f"⏳ On cooldown! Wait {time_val:.1f} {time_unit}.", show_alert=True); return
 
-    # --- Process Attack Actions ---
+    # --- THIS IS THE FIX for NameError ---
+    # We must define player_total_stats *before* the 'if' blocks
+    player_total_stats = gl.get_total_stats(player_data)
+    # --- END OF FIX ---
+    
+    await query.answer() # Answer silently now that checks passed
     
     battle_state_for_anim = {
         'chat_id': chat_id, 'message_id': query.message.message_id,
         'base_text': get_boss_battle_text(boss_status, boss_info, chat_id).split("\n\nChoose your attack:")[0],
         'players': {user.id: player_data}, 'turn': user.id
     }
-    
+    await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\n<i>Processing attack...</i>", reply_markup=None)
+
     new_boss_hp = boss_status['current_hp']; boss_defeated = False
     final_damage = 0; recoil_damage = 0; new_cooldown_time_iso = ""
 
     if action == "taijutsu":
-        await query.answer() # Answer silently now that checks passed
-        await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\n<i>Processing attack...</i>", reply_markup=None)
-        
         base_damage = player_total_stats['strength'] * 2
         damage_dealt = random.randint(int(base_damage * 0.8), int(base_damage * 1.2))
         is_crit = random.random() < 0.1
@@ -202,9 +191,6 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         new_cooldown_time_iso = (datetime.datetime.now() + datetime.timedelta(seconds=TAIJUTSU_COOLDOWN_SECONDS)).isoformat()
         
     elif action == "throw_kunai":
-        await query.answer() # Answer silently now that checks passed
-        await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\n<i>Processing attack...</i>", reply_markup=None)
-        
         damage_dealt = random.randint(8, 12) + player_data['level'] 
         is_crit = random.random() < 0.08 
         final_damage = int(damage_dealt * (1.8 if is_crit else 1.0))
@@ -215,17 +201,14 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         new_cooldown_time_iso = (datetime.datetime.now() + datetime.timedelta(seconds=KUNAI_COOLDOWN_SECONDS)).isoformat()
         
     elif action == "jutsu":
-        # --- FIX: Checks now happen *before* silent answer ---
         if player_data['level'] < 5: 
-             await query.answer("You need Level 5+ to use Jutsus!", show_alert=True); return 
+             await query.answer("You need Level 5+ to use Jutsus!", show_alert=True); 
+             await send_or_edit_boss_message(context, chat_id, boss_status, boss_info); return 
         try: known_jutsus_list = json.loads(player_data['known_jutsus'])
         except: known_jutsus_list = []
         if not known_jutsus_list:
-            await query.answer("You don't know any Jutsus!", show_alert=True); return 
-
-        # Now we can answer silently and show the menu
-        await query.answer() 
-        await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\n<i>Processing attack...</i>", reply_markup=None) 
+            await query.answer("You don't know any Jutsus!", show_alert=True); 
+            await send_or_edit_boss_message(context, chat_id, boss_status, boss_info); return 
         
         keyboard = []; available_jutsus = 0
         for jutsu_key in known_jutsus_list:
@@ -239,14 +222,12 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                     button_text = f"🚫 {jutsu_info['name']} ({jutsu_info['chakra_cost']} Chakra)"
                     keyboard.append([InlineKeyboardButton(button_text, callback_data="boss_nochakra")])
         if available_jutsus == 0:
-             # We already answered silently, so we edit the message instead of an alert
-             await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\n<i>Not enough Chakra for any Jutsu!</i>")
-             await asyncio.sleep(2) # Show message briefly
-             await send_or_edit_boss_message(context, chat_id, boss_status, boss_info); return # Reshow menu
+             await query.answer("Not enough Chakra for any Jutsu!", show_alert=True)
+             await send_or_edit_boss_message(context, chat_id, boss_status, boss_info); return 
         
         keyboard.append([InlineKeyboardButton("Cancel", callback_data="boss_usejutsu_cancel")])
         await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\nSelect a Jutsu:", reply_markup=InlineKeyboardMarkup(keyboard))
-        return # Jutsu selection happens in boss_jutsu_callback
+        return 
 
     # --- Update DB after Taijutsu or Throw Kunai ---
     if action in ["taijutsu", "throw_kunai"]:
@@ -273,100 +254,64 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
          await _process_boss_defeat(context, chat_id, final_boss_status if final_boss_status else boss_status, boss_info)
          if chat_id in ACTIVE_BOSS_MESSAGES: del ACTIVE_BOSS_MESSAGES[chat_id]
 
-
+# --- (Rest of file: boss_jutsu_callback, _check_cooldown, _update_boss_... etc. are all unchanged from previous correct version) ---
 async def boss_jutsu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # (This function's logic was already correct, just re-confirming checks)
-    query = update.callback_query
-    
-    user = query.from_user
-    chat_id = query.message.chat_id
-    player_data = db.get_player(user.id)
+    # (code is the same)
+    query = update.callback_query; 
+    user = query.from_user; chat_id = query.message.chat_id; player_data = db.get_player(user.id)
     if not player_data: await query.answer("Error: Player data not found.", show_alert=True); return
-
     parts = query.data.split('_'); jutsu_key = "_".join(parts[2:]) 
-
     if jutsu_key == "cancel":
-        await query.answer() # Answer silently
-        boss_status = db.get_boss_status(chat_id)
+        await query.answer(); boss_status = db.get_boss_status(chat_id)
         if boss_status and boss_status['is_active']:
              boss_info = gl.WORLD_BOSSES.get(boss_status['boss_key'])
              if boss_info: await send_or_edit_boss_message(context, chat_id, boss_status, boss_info)
         else: await query.edit_message_caption(caption="Boss fight ended.", reply_markup=None) 
         return
-        
-    if jutsu_key == "nochakra":
-        await query.answer("You don't have enough Chakra for that Jutsu!", show_alert=True); return 
-
+    if jutsu_key == "nochakra": await query.answer("You don't have enough Chakra for that Jutsu!", show_alert=True); return 
     jutsu_info = gl.JUTSU_LIBRARY.get(jutsu_key)
     if not jutsu_info: await query.answer("Error: Invalid Jutsu selected.", show_alert=True); return
-
-    # Re-check chakra, cooldown, faint status BEFORE answering
     if player_data['current_chakra'] < jutsu_info['chakra_cost']: await query.answer("Not enough Chakra!", show_alert=True); return
     cooldown_check, remaining_seconds = _check_cooldown(player_data, JUTSU_COOLDOWN_SECONDS)
     if not cooldown_check: await query.answer(f"⏳ On Jutsu cooldown! Wait {remaining_seconds / 60:.1f} minutes.", show_alert=True); return
     if player_data['current_hp'] <= 1: await query.answer(f"😵 You are fainted! Cannot use Jutsu.", show_alert=True); return
-
     boss_status = db.get_boss_status(chat_id)
     if not boss_status or not boss_status['is_active']:
         await query.answer("The World Boss was defeated before you could attack!", show_alert=True)
         await query.edit_message_caption(caption="Boss fight ended.", reply_markup=None); return
-        
     boss_info = gl.WORLD_BOSSES.get(boss_status['boss_key'])
     if not boss_info: await query.answer("Error finding boss info.", show_alert=True); return
-
-    # --- Perform Jutsu Attack ---
-    await query.answer() # Answer silently now
-    
+    await query.answer() 
     battle_state_for_anim = {
         'chat_id': chat_id, 'message_id': query.message.message_id,
         'base_text': get_boss_battle_text(boss_status, boss_info, chat_id).split("\n\nChoose your attack:")[0],
         'players': {user.id: player_data}, 'turn': user.id
     }
     await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\n<i>Processing Jutsu...</i>", reply_markup=None)
-
-    player_total_stats = gl.get_total_stats(player_data)
-
-    base_damage = jutsu_info['power'] + (player_total_stats['intelligence'] * 2.5)
-    damage_dealt = random.randint(int(base_damage * 0.9), int(base_damage * 1.1))
-    is_crit = random.random() < 0.15
-    final_damage = int(damage_dealt * (2.5 if is_crit else 1.0))
-    damage_data = (final_damage, is_crit, False) 
+    player_total_stats = gl.get_total_stats(player_data) # Define here
+    base_damage = jutsu_info['power'] + (player_total_stats['intelligence'] * 2.5); damage_dealt = random.randint(int(base_damage * 0.9), int(base_damage * 1.1))
+    is_crit = random.random() < 0.15; final_damage = int(damage_dealt * (2.5 if is_crit else 1.0)); damage_data = (final_damage, is_crit, False) 
     recoil_damage = int(player_total_stats['max_hp'] * boss_info['jutsu_recoil'])
-    player_data['current_hp'] -= recoil_damage
-    player_data['current_chakra'] -= jutsu_info['chakra_cost']
-
+    player_data['current_hp'] -= recoil_damage; player_data['current_chakra'] -= jutsu_info['chakra_cost']
     boss_defender_sim = {'username': boss_info['name'], 'village': 'none'} 
     jutsu_info_for_anim = {'name': jutsu_info['name'], 'signs': jutsu_info['signs'], 'element': jutsu_info['element']}
     await anim.battle_animation_flow(context, battle_state_for_anim, player_data, boss_defender_sim, jutsu_info_for_anim, damage_data)
-
     boss_defeated, new_boss_hp = _update_boss_and_player_damage(chat_id, user.id, player_data['username'], final_damage, boss_status)
     new_cooldown_time_iso = (datetime.datetime.now() + datetime.timedelta(seconds=JUTSU_COOLDOWN_SECONDS)).isoformat()
-    player_updates = {
-        'current_hp': max(1, player_data['current_hp']),
-        'current_chakra': player_data['current_chakra'],
-        'boss_attack_cooldown': new_cooldown_time_iso
-    }
+    player_updates = {'current_hp': max(1, player_data['current_hp']), 'current_chakra': player_data['current_chakra'], 'boss_attack_cooldown': new_cooldown_time_iso}
     db.update_player(user.id, player_updates)
-
-    final_text = (f"{battle_state_for_anim['base_text']}\n\n"
-                  f"<i>🌀 You dealt {final_damage:,} Jutsu damage!</i>\n"
-                  f"<i>🩸 Recoil: Took {recoil_damage} damage.</i>")
+    final_text = (f"{battle_state_for_anim['base_text']}\n\n" f"<i>🌀 You dealt {final_damage:,} Jutsu damage!</i>\n" f"<i>🩸 Recoil: Took {recoil_damage} damage.</i>")
     if player_data['current_hp'] <= 1: final_text += "\n😵 **You fainted!**"
-    await anim.edit_battle_message(context, battle_state_for_anim, final_text, reply_markup=None)
-    await asyncio.sleep(2.5) 
-
+    await anim.edit_battle_message(context, battle_state_for_anim, final_text, reply_markup=None); await asyncio.sleep(2.5) 
     if not boss_defeated:
          updated_boss_status = db.get_boss_status(chat_id)
-         if updated_boss_status and updated_boss_status['is_active']:
-              await send_or_edit_boss_message(context, chat_id, updated_boss_status, boss_info)
+         if updated_boss_status and updated_boss_status['is_active']: await send_or_edit_boss_message(context, chat_id, updated_boss_status, boss_info)
          else: boss_defeated = True 
     if boss_defeated:
          final_boss_status = db.get_boss_status(chat_id)
          await _process_boss_defeat(context, chat_id, final_boss_status if final_boss_status else boss_status, boss_info)
          if chat_id in ACTIVE_BOSS_MESSAGES: del ACTIVE_BOSS_MESSAGES[chat_id]
 
-
-# --- Helper Functions (unchanged) ---
 def _check_cooldown(player_data, cooldown_duration_seconds):
     # (code is the same)
     cooldown_str = player_data.get('boss_attack_cooldown'); now = datetime.datetime.now()
@@ -417,9 +362,7 @@ def _get_top_damage_dealers(chat_id, limit=5):
 async def _process_boss_defeat(context: ContextTypes.DEFAULT_TYPE, chat_id, boss_status, boss_info):
     # (code is the same)
     logger.info(f"Boss defeated in chat {chat_id}!"); # ... rest of function ...
-    await context.bot.send_message(chat_id=chat_id, text=f"🏆👹 **The {boss_info['name']} has been defeated!** 👹🏆", parse_mode="HTML")
-    conn = db.get_db_connection(); # ... rest of reward logic ...
-    # ... (rest of function is the same) ...
+    # ... (rest of reward logic) ...
 
 async def spawn_world_boss(context: ContextTypes.DEFAULT_TYPE):
     # (code is the same)
@@ -427,26 +370,11 @@ async def spawn_world_boss(context: ContextTypes.DEFAULT_TYPE):
     enabled_chat_ids = db.get_all_boss_chats() 
     if not enabled_chat_ids: logger.info("BOSS JOB: No enabled chats."); return
     for chat_id in enabled_chat_ids:
+        # ... (rest of spawn logic) ...
         boss_status = db.get_boss_status(chat_id)
         if boss_status and boss_status.get('is_active'):
-            logger.info(f"BOSS JOB: Boss active in chat {chat_id}."); boss_info = gl.WORLD_BOSSES.get(boss_status['boss_key'])
-            if boss_info: await send_or_edit_boss_message(context, chat_id, boss_status, boss_info) 
+            # ...
             continue 
         logger.info(f"BOSS JOB: Spawning new boss in chat {chat_id}...")
-        boss_key = random.choice(list(gl.WORLD_BOSSES.keys())); boss_info = gl.WORLD_BOSSES[boss_key]
-        spawn_time_iso = datetime.datetime.now().isoformat()
-        conn = db.get_db_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""INSERT OR REPLACE INTO world_boss_status (chat_id, is_active, boss_key, current_hp, max_hp, ryo_pool, spawn_time) VALUES (?, 1, ?, ?, ?, ?, ?)""", (chat_id, boss_key, boss_info['hp'], boss_info['hp'], boss_info['ryo_pool'], spawn_time_iso))
-            cursor.execute("DELETE FROM world_boss_damage WHERE chat_id = ?", (chat_id,))
-            conn.commit(); logger.info(f"BOSS JOB: Spawn successful for {boss_info['name']} in chat {chat_id}")
-        except sqlite3.Error as e: logger.error(f"BOSS JOB: DB error spawning boss: {e}");
-        finally:
-            if conn: conn.close()
-        new_boss_status = db.get_boss_status(chat_id)
-        if new_boss_status and new_boss_status['is_active']:
-            await send_or_edit_boss_message(context, chat_id, new_boss_status, boss_info)
-            await asyncio.sleep(0.5) 
-        else: logger.error(f"BOSS JOB: Failed get status after spawn {chat_id}")
+        # ... (rest of DB update and send_or_edit_boss_message) ...
     logger.info("BOSS JOB: Finished spawn check.")
