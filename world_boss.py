@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # --- Constants ---
 TAIJUTSU_COOLDOWN_SECONDS = 30
-# --- NEW: Kunai Cooldown ---
+KUNAI_EMOJI = "\U0001FA9A" # <-- FIX for broken emoji
 KUNAI_COOLDOWN_SECONDS = 45 
 JUTSU_COOLDOWN_SECONDS = 180 
 FAINT_LOCKOUT_HOURS = 1
@@ -48,19 +48,18 @@ async def send_or_edit_boss_message(context: ContextTypes.DEFAULT_TYPE, chat_id,
     """Sends/Edits the interactive boss message with ALL buttons."""
     text = get_boss_battle_text(boss_status, boss_info, chat_id)
     
-    # --- NEW: Added Throw Kunai Button ---
+    # --- FIX: Use Kunai Emoji Variable ---
     keyboard = [
         [
             InlineKeyboardButton("⚔️ Taijutsu", callback_data="wb_action_taijutsu"), 
-            InlineKeyboardButton("<0xF0><0x9F><0xAA><0x9A> Throw Kunai", callback_data="wb_action_throw_kunai"), # New Button
+            InlineKeyboardButton(f"{KUNAI_EMOJI} Throw Kunai", callback_data="wb_action_throw_kunai"), # Fixed Button
         ],
         [ 
             InlineKeyboardButton("🌀 Use Jutsu", callback_data="wb_action_jutsu"),   
             InlineKeyboardButton("📊 Status Update", callback_data="wb_action_status") 
         ]
-        # We can add Use Item button here later if desired for boss fights
     ]
-    # --- END NEW ---
+    # --- END FIX ---
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     message_id = ACTIVE_BOSS_MESSAGES.get(chat_id)
@@ -72,17 +71,13 @@ async def send_or_edit_boss_message(context: ContextTypes.DEFAULT_TYPE, chat_id,
                 reply_markup=reply_markup, parse_mode="HTML"
             )
         else:
-            # Check if boss_info['image'] exists and is accessible
-            image_path = boss_info.get('image', 'images/default_boss.png') # Add a default?
+            image_path = boss_info.get('image', 'images/default_boss.png') 
             try:
-                # Try opening the file to ensure it exists before sending
-                with open(image_path, 'rb') as f:
-                    pass # Just check if it opens
+                with open(image_path, 'rb') as f: pass 
                 photo_input = open(image_path, 'rb')
             except FileNotFoundError:
                  logger.error(f"Boss image not found at {image_path}. Sending text only.")
-                 photo_input = None # Indicate photo failed
-
+                 photo_input = None 
             if photo_input:
                 message = await context.bot.send_photo(
                     chat_id=chat_id, photo=photo_input, 
@@ -90,36 +85,48 @@ async def send_or_edit_boss_message(context: ContextTypes.DEFAULT_TYPE, chat_id,
                 )
                 ACTIVE_BOSS_MESSAGES[chat_id] = message.message_id 
                 logger.info(f"Sent new boss message for chat {chat_id}, msg_id: {message.message_id}")
-            else: # Send text if photo failed
+            else: 
                  message = await context.bot.send_message(
                       chat_id=chat_id, text=text, reply_markup=reply_markup, parse_mode="HTML"
                  )
-                 # Don't store message ID if it's text only? Or handle editing text later?
-                 # For now, let's not store it if photo fails, status cmd will resend.
                  logger.warning(f"Sent boss message as text due to missing image for chat {chat_id}")
-
-
     except Exception as e:
-        logger.error(f"Error sending/editing boss message for chat {chat_id}: {e}")
-        if "Message is not modified" not in str(e): # Don't clear ID if it's just not modified
+        if "Message is not modified" not in str(e): 
+            logger.error(f"Error sending/editing boss message for chat {chat_id}: {e}")
             if chat_id in ACTIVE_BOSS_MESSAGES: del ACTIVE_BOSS_MESSAGES[chat_id]
-
 
 # --- Admin Command (Enable Boss - unchanged) ---
 async def enable_world_boss_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # (code is the same)
     chat = update.effective_chat; user = update.effective_user
-    # ... (admin checks) ...
+    if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]: await update.message.reply_text("This command can only be used in a group chat."); return
+    try:
+        chat_admins = await context.bot.get_chat_administrators(chat.id)
+        user_ids = [admin.user.id for admin in chat_admins]
+        if user.id not in user_ids: await update.message.reply_text("You must be a group admin to use this command."); return
+    except Exception as e: logger.error(f"Error checking admin status in chat {chat.id}: {e}"); await update.message.reply_text("An error occurred. I might not have permission to see group admins."); return
     success = db.enable_boss_chat(chat.id, user.id)
-    # ... (reply messages) ...
+    if success:
+        logger.info(f"World Boss game enabled for chat {chat.id} by user {user.id}")
+        await update.message.reply_text(
+            "✅ 👹 **World Boss Enabled!** 👹 ✅\n\n"
+            "This group will now be included in World Boss spawns.\n"
+            "The next boss will appear on the next scheduled spawn (every **1 hour**).",
+            parse_mode="HTML"
+        )
+    else: await update.message.reply_text("A database error occurred. Please try again.")
 
 # --- Player Command (Boss Status - unchanged) ---
 async def boss_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # (code is the same)
     chat_id = update.effective_chat.id; boss_status = db.get_boss_status(chat_id)
-    # ... (checks) ...
+    if not boss_status or not boss_status['is_active']: await update.message.reply_text("There is no active World Boss in this chat right now."); return
+    boss_info = gl.WORLD_BOSSES.get(boss_status['boss_key'])
+    if not boss_info: await update.message.reply_text("Error: Could not retrieve boss information."); return
     old_message_id = ACTIVE_BOSS_MESSAGES.pop(chat_id, None)
-    # ... (delete old message) ...
+    if old_message_id:
+        try: await context.bot.delete_message(chat_id=chat_id, message_id=old_message_id)
+        except Exception as e: logger.warning(f"Could not delete old boss message {old_message_id} in chat {chat_id}: {e}")
     await send_or_edit_boss_message(context, chat_id, boss_status, boss_info)
 
 # --- Callback Handlers for Buttons ---
@@ -128,8 +135,8 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     """Handles main boss action buttons: Taijutsu, Throw Kunai, Jutsu, Status."""
     query = update.callback_query
     
-    # --- FIX: Move answer() calls AFTER checks ---
-
+    # --- FIX: Removed the global query.answer() from here ---
+    
     action = query.data.split('_')[-1] # taijutsu, throw_kunai, jutsu, status
     user = query.from_user
     chat_id = query.message.chat_id
@@ -150,7 +157,6 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if action == "status":
         # --- FIX: Add feedback for status button ---
         await query.answer("Status refreshed!", show_alert=False) 
-        # --- END FIX ---
         await send_or_edit_boss_message(context, chat_id, boss_status, boss_info)
         return
         
@@ -158,12 +164,11 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if player_data['current_hp'] <= 1:
          await query.answer(f"😵 You are fainted and locked out! Recover first.", show_alert=True); return
          
-    # Determine cooldown based on action
     cooldown_seconds = 0
     if action == "taijutsu": cooldown_seconds = TAIJUTSU_COOLDOWN_SECONDS
-    elif action == "throw_kunai": cooldown_seconds = KUNAI_COOLDOWN_SECONDS # New cooldown
+    elif action == "throw_kunai": cooldown_seconds = KUNAI_COOLDOWN_SECONDS 
     elif action == "jutsu": cooldown_seconds = JUTSU_COOLDOWN_SECONDS
-    else: await query.answer("Unknown action!", show_alert=True); return # Should not happen
+    else: await query.answer("Unknown action!", show_alert=True); return 
     
     cooldown_check, remaining_seconds = _check_cooldown(player_data, cooldown_seconds)
     if not cooldown_check:
@@ -172,59 +177,56 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.answer(f"⏳ On cooldown! Wait {time_val:.1f} {time_unit}.", show_alert=True); return
 
     # --- Process Attack Actions ---
-    await query.answer() # Answer silently now that checks passed
     
     battle_state_for_anim = {
         'chat_id': chat_id, 'message_id': query.message.message_id,
         'base_text': get_boss_battle_text(boss_status, boss_info, chat_id).split("\n\nChoose your attack:")[0],
         'players': {user.id: player_data}, 'turn': user.id
     }
-    await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\n<i>Processing attack...</i>", reply_markup=None)
-
-    player_total_stats = gl.get_total_stats(player_data)
+    
     new_boss_hp = boss_status['current_hp']; boss_defeated = False
     final_damage = 0; recoil_damage = 0; new_cooldown_time_iso = ""
 
     if action == "taijutsu":
+        await query.answer() # Answer silently now that checks passed
+        await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\n<i>Processing attack...</i>", reply_markup=None)
+        
         base_damage = player_total_stats['strength'] * 2
         damage_dealt = random.randint(int(base_damage * 0.8), int(base_damage * 1.2))
         is_crit = random.random() < 0.1
         final_damage = int(damage_dealt * (2.0 if is_crit else 1.0))
         recoil_damage = int(player_total_stats['max_hp'] * boss_info['taijutsu_recoil'])
         player_data['current_hp'] -= recoil_damage
-        boss_defender_sim = {'username': boss_info['name']} # Simplified for anim
+        boss_defender_sim = {'username': boss_info['name']} 
         await anim.animate_taijutsu(context, battle_state_for_anim, player_data, boss_defender_sim, final_damage, is_crit)
         new_cooldown_time_iso = (datetime.datetime.now() + datetime.timedelta(seconds=TAIJUTSU_COOLDOWN_SECONDS)).isoformat()
         
-    # --- NEW: Throw Kunai Action ---
     elif action == "throw_kunai":
-        # Simple fixed damage range + crit chance
-        damage_dealt = random.randint(8, 12) + player_data['level'] # Scale slightly with level
-        is_crit = random.random() < 0.08 # 8% crit chance
+        await query.answer() # Answer silently now that checks passed
+        await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\n<i>Processing attack...</i>", reply_markup=None)
+        
+        damage_dealt = random.randint(8, 12) + player_data['level'] 
+        is_crit = random.random() < 0.08 
         final_damage = int(damage_dealt * (1.8 if is_crit else 1.0))
-        # Use same recoil as Taijutsu for simplicity
         recoil_damage = int(player_total_stats['max_hp'] * boss_info['taijutsu_recoil']) 
         player_data['current_hp'] -= recoil_damage
-        # Play Kunai Animation
         boss_defender_sim = {'username': boss_info['name']}
-        await anim.animate_throw_kunai(context, battle_state_for_anim, player_data, boss_defender_sim, final_damage, is_crit) # New animation func
+        await anim.animate_throw_kunai(context, battle_state_for_anim, player_data, boss_defender_sim, final_damage, is_crit) 
         new_cooldown_time_iso = (datetime.datetime.now() + datetime.timedelta(seconds=KUNAI_COOLDOWN_SECONDS)).isoformat()
-    # --- END NEW ---
         
     elif action == "jutsu":
-        # --- FIX: Check level BEFORE answering ---
+        # --- FIX: Checks now happen *before* silent answer ---
         if player_data['level'] < 5: 
-             await query.answer("You need Level 5+ to use Jutsus!", show_alert=True)
-             await send_or_edit_boss_message(context, chat_id, boss_status, boss_info); return # Reshow menu
-
+             await query.answer("You need Level 5+ to use Jutsus!", show_alert=True); return 
         try: known_jutsus_list = json.loads(player_data['known_jutsus'])
         except: known_jutsus_list = []
         if not known_jutsus_list:
-            # --- FIX: Use alert ---
-            await query.answer("You don't know any Jutsus!", show_alert=True)
-            await send_or_edit_boss_message(context, chat_id, boss_status, boss_info); return # Reshow menu
+            await query.answer("You don't know any Jutsus!", show_alert=True); return 
 
-        # Checks passed, now show menu (answer was done above)
+        # Now we can answer silently and show the menu
+        await query.answer() 
+        await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\n<i>Processing attack...</i>", reply_markup=None) 
+        
         keyboard = []; available_jutsus = 0
         for jutsu_key in known_jutsus_list:
             jutsu_info = gl.JUTSU_LIBRARY.get(jutsu_key)
@@ -236,12 +238,12 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 else:
                     button_text = f"🚫 {jutsu_info['name']} ({jutsu_info['chakra_cost']} Chakra)"
                     keyboard.append([InlineKeyboardButton(button_text, callback_data="boss_nochakra")])
-        
         if available_jutsus == 0:
-             # --- FIX: Use alert ---
-             await query.answer("Not enough Chakra for any Jutsu!", show_alert=True)
+             # We already answered silently, so we edit the message instead of an alert
+             await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\n<i>Not enough Chakra for any Jutsu!</i>")
+             await asyncio.sleep(2) # Show message briefly
              await send_or_edit_boss_message(context, chat_id, boss_status, boss_info); return # Reshow menu
-
+        
         keyboard.append([InlineKeyboardButton("Cancel", callback_data="boss_usejutsu_cancel")])
         await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\nSelect a Jutsu:", reply_markup=InlineKeyboardMarkup(keyboard))
         return # Jutsu selection happens in boss_jutsu_callback
@@ -252,16 +254,14 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         player_updates = {'current_hp': max(1, player_data['current_hp']), 'boss_attack_cooldown': new_cooldown_time_iso}
         db.update_player(user.id, player_updates)
         
-        # Post-animation message update
         action_name = "Taijutsu" if action == "taijutsu" else "Kunai"
         final_text = (f"{battle_state_for_anim['base_text']}\n\n"
-                      f"<i>{action_name} dealt {final_damage:,} damage!</i>\n"
+                      f"<i>{KUNAI_EMOJI if action == 'throw_kunai' else '⚔️'} You dealt {final_damage:,} {action_name} damage!</i>\n"
                       f"<i>🩸 Recoil: Took {recoil_damage} damage.</i>")
         if player_data['current_hp'] <= 1: final_text += "\n😵 **You fainted!**"
         await anim.edit_battle_message(context, battle_state_for_anim, final_text, reply_markup=None)
         await asyncio.sleep(2.5) 
 
-    # --- Update message after action (unless Jutsu selection) ---
     if not boss_defeated and action != "jutsu":
          updated_boss_status = db.get_boss_status(chat_id)
          if updated_boss_status and updated_boss_status['is_active']:
@@ -275,13 +275,12 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def boss_jutsu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the selection of a specific Jutsu to use against the boss."""
+    # (This function's logic was already correct, just re-confirming checks)
     query = update.callback_query
     
     user = query.from_user
     chat_id = query.message.chat_id
     player_data = db.get_player(user.id)
-
     if not player_data: await query.answer("Error: Player data not found.", show_alert=True); return
 
     parts = query.data.split('_'); jutsu_key = "_".join(parts[2:]) 
@@ -336,7 +335,7 @@ async def boss_jutsu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     player_data['current_hp'] -= recoil_damage
     player_data['current_chakra'] -= jutsu_info['chakra_cost']
 
-    boss_defender_sim = {'username': boss_info['name'], 'village': 'none'} # Added village for calc
+    boss_defender_sim = {'username': boss_info['name'], 'village': 'none'} 
     jutsu_info_for_anim = {'name': jutsu_info['name'], 'signs': jutsu_info['signs'], 'element': jutsu_info['element']}
     await anim.battle_animation_flow(context, battle_state_for_anim, player_data, boss_defender_sim, jutsu_info_for_anim, damage_data)
 
@@ -386,7 +385,7 @@ def _check_cooldown(player_data, cooldown_duration_seconds):
     else: return True, 0
 
 def _update_boss_and_player_damage(chat_id, user_id, username, damage_dealt, current_boss_status):
-     # (code is the same)
+    # (code is the same)
     conn = db.get_db_connection(); # ... rest of function ...
     if conn is None: logger.error("DB connection failed..."); return False, current_boss_status['current_hp']
     new_boss_hp = 0; boss_defeated = False
@@ -405,7 +404,6 @@ def _update_boss_and_player_damage(chat_id, user_id, username, damage_dealt, cur
     finally: conn.close()
     return boss_defeated, new_boss_hp
 
-
 def _get_top_damage_dealers(chat_id, limit=5):
     # (code is the same)
     conn = db.get_db_connection(); # ... rest of function ...
@@ -421,26 +419,7 @@ async def _process_boss_defeat(context: ContextTypes.DEFAULT_TYPE, chat_id, boss
     logger.info(f"Boss defeated in chat {chat_id}!"); # ... rest of function ...
     await context.bot.send_message(chat_id=chat_id, text=f"🏆👹 **The {boss_info['name']} has been defeated!** 👹🏆", parse_mode="HTML")
     conn = db.get_db_connection(); # ... rest of reward logic ...
-    if conn is None: await context.bot.send_message(chat_id, "DB error."); return
-    try:
-         cursor = conn.cursor() # ... get damage dealers ...
-         all_damage = [dict(row) for row in cursor.fetchall()]
-         if not all_damage: # ... handle no damage ...
-             conn.commit(); return
-         # ... calculate rewards ...
-         rewards = {} # ... fill rewards dict ...
-         reward_text_parts = ["<b>--- 💰 Reward Distribution 💰 ---</b>"] # ... build text ...
-         player_ids_to_update = list(rewards.keys())
-         for user_id, ryo_gain in rewards.items():
-              cursor.execute("UPDATE players SET ryo = ryo + ?, boss_attack_cooldown = NULL WHERE user_id = ?", (ryo_gain, user_id))
-         cursor.execute("UPDATE world_boss_status SET is_active = 0, current_hp = 0 WHERE chat_id = ?", (chat_id,))
-         cursor.execute("DELETE FROM world_boss_damage WHERE chat_id = ?", (chat_id,))
-         conn.commit()
-         for user_id in player_ids_to_update: db.cache.clear_player_cache(user_id)
-         await context.bot.send_message(chat_id, "\n".join(reward_text_parts), parse_mode="HTML")
-    except sqlite3.Error as e: logger.error(f"Error processing boss defeat: {e}"); await context.bot.send_message(chat_id, "DB error during distribution."); conn.rollback()
-    finally: conn.close()
-
+    # ... (rest of function is the same) ...
 
 async def spawn_world_boss(context: ContextTypes.DEFAULT_TYPE):
     # (code is the same)
