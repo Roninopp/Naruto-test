@@ -1,6 +1,6 @@
 import logging
 import json
-import asyncio # Keep asyncio import if needed elsewhere, although not directly used here now
+import asyncio # Keep asyncio import if needed elsewhere
 from datetime import timedelta, datetime # Keep datetime for potential future use
 
 # Setup Logging FIRST
@@ -16,7 +16,7 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
-    JobQueue # Make sure JobQueue is imported if we need to explicitly create it later
+    JobQueue # Keep JobQueue import
 )
 
 # Import our code modules
@@ -29,26 +29,26 @@ import battle
 import cache
 import shop
 import help_handler
-import world_boss # Keep your world_boss import
-import sudo       # Keep your sudo import
+import world_boss # Import your updated world_boss module
+import sudo       # Import your sudo module
 import inventory  # Import inventory module
 
 # --- Constants ---
-# --- !!! IMPORTANT: Use YOUR NEW Bot Token Here !!! ---
-BOT_TOKEN = "8400754472:AAGqOme2MQq_Bim_FhO2Fr_DJGuUZrBDsBc" # Your Bot Token
+# --- !!! IMPORTANT: Use YOUR Bot Token Here !!! ---
+BOT_TOKEN = "YOUR_BOT_TOKEN_HERE" # Make sure this is your correct token
 # --- Make sure the correct token is above ---
 
 START_IMAGE_URL = "https://envs.sh/r6z.jpg"
 
 # --- Command Handlers (Core, Profile, Help, GiveEXP - unchanged) ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (code is the same) ...
+    # (code is the same as the last correct version)
     user = update.effective_user
     player = db.get_player(user.id)
     help_button = InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")
     if player:
         welcome_text = (
-            f"🔥 Welcome back, {player['rank']} {player['username']} of {player['village']}! 🔥\n\n"
+            f"🔥 Welcome back, {player.get('rank', 'Ninja')} {player.get('username', 'User')} of {player.get('village', 'Unknown Village')}! 🔥\n\n" # Use .get for safety
             "The path of the ninja is long and challenging. Continue your training, undertake perilous missions, and prove your strength against rivals!\n\n"
             "<i>What destiny awaits you today?</i>"
         )
@@ -56,9 +56,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try: await context.bot.send_photo(chat_id=update.effective_chat.id, photo=START_IMAGE_URL, caption=welcome_text, parse_mode="HTML", reply_markup=reply_markup)
         except Exception as e: logger.error(f"Failed to send start photo: {e}. Sending text only."); await update.message.reply_text(welcome_text, parse_mode="HTML", reply_markup=reply_markup)
     else:
-        logger.info(f"New user registration started: {user.username} (ID: {user.id})")
+        username = user.username if user.username else user.first_name # Handle missing username
+        logger.info(f"New user registration started: {username} (ID: {user.id})")
         welcome_text = (
-            f"Greetings, {user.username}! A new legend begins...\n\n"
+            f"Greetings, {username}! A new legend begins...\n\n"
             "✨ Welcome to the <b>Shinobi Chronicles RPG</b>! ✨\n\n"
             "Step into a world inspired by Naruto, where you'll forge your own ninja path. Here you can:\n"
             "  💪 Train to master powerful techniques\n"
@@ -76,7 +77,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (code is the same) ...
+    # (code is the same as the last correct version)
     user = update.effective_user
     player = db.get_player(user.id)
     if not player: await update.message.reply_text("You haven't started your journey yet! Use /start to begin."); return
@@ -117,23 +118,15 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(profile_text, parse_mode="HTML")
 
 
-async def give_exp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (code is the same) ...
-    user = update.effective_user
-    player = db.get_player(user.id)
-    if not player: await update.message.reply_text("Use /start first."); return
-    try: amount = int(context.args[0])
-    except (IndexError, ValueError): await update.message.reply_text("Please provide an amount, e.g., /giveexp 150"); return
-    temp_player_data = dict(player); temp_player_data['exp'] += amount; temp_player_data['total_exp'] += amount
-    final_player_data, leveled_up, messages = gl.check_for_level_up(temp_player_data)
-    success = db.update_player(user.id, final_player_data)
-    if success: await update.message.reply_text(f"Gained {amount} EXP!\n\n" + "\n".join(messages))
-    else: await update.message.reply_text("An error occurred while adding EXP.")
+# --- REMOVED Unsecured /giveexp Command ---
+# async def give_exp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#    # ... (code removed) ...
+#    pass # Keep the structure but make it do nothing, or remove entirely
 
 
-# --- Callbacks ---
+# --- Callbacks (village_selection - unchanged) ---
 async def village_selection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (code is the same) ...
+    # (code is the same as the last correct version)
     query = update.callback_query; await query.answer()
     user = query.from_user; village_key = query.data.split('_', 1)[1]
     if db.get_player(user.id):
@@ -170,7 +163,7 @@ def main():
     # Core
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("profile", profile_command))
-    application.add_handler(CommandHandler("giveexp", give_exp_command))
+    # application.add_handler(CommandHandler("giveexp", give_exp_command)) # REMOVED unsecured command
     application.add_handler(CommandHandler("help", help_handler.show_main_help_menu))
     application.add_handler(CommandHandler("inventory", inventory.inventory_command))
 
@@ -191,14 +184,16 @@ def main():
     application.add_handler(CallbackQueryHandler(battle.battle_jutsu_callback, pattern="^battle_jutsu_"))
     application.add_handler(CallbackQueryHandler(battle.battle_item_callback, pattern="^battle_item_"))
 
-    # World Boss
+    # --- WORLD BOSS HANDLERS (Using your new world_boss.py) ---
     application.add_handler(CommandHandler("enable_world_boss", world_boss.enable_world_boss_command))
     application.add_handler(CommandHandler("boss_status", world_boss.boss_status_command))
-    application.add_handler(CommandHandler("boss_taijutsu", world_boss.boss_taijutsu_command))
-    application.add_handler(CommandHandler("boss_jutsu", world_boss.boss_jutsu_command))
+    # Use new action callback for buttons
+    application.add_handler(CallbackQueryHandler(world_boss.boss_action_callback, pattern="^boss_action_"))
+    # Keep jutsu selection callback
     application.add_handler(CallbackQueryHandler(world_boss.boss_jutsu_callback, pattern="^boss_usejutsu_"))
+    # REMOVED old /boss_taijutsu and /boss_jutsu commands as they are replaced by buttons now
 
-    # Sudo
+    # --- SUDO HANDLERS (Using your sudo.py) ---
     application.add_handler(CommandHandler("server_stats", sudo.server_stats_command))
     application.add_handler(CommandHandler("db_query", sudo.db_query_command))
     application.add_handler(CommandHandler("sudo_give", sudo.sudo_give_command))
@@ -216,18 +211,17 @@ def main():
     application.add_handler(CallbackQueryHandler(help_handler.back_to_main_help_callback, pattern="^back_to_main_help$"))
 
     # --- Start the Boss Spawn Job ---
-    # --- THIS IS THE FIX ---
-    # Access application.job_queue directly
+    # --- Corrected to use function from world_boss.py ---
     try:
         if application.job_queue:
-            application.job_queue.run_repeating(world_boss.spawn_world_boss, interval=3600, first=10) # Run every hour, start after 10 sec
+            # Point to the function INSIDE world_boss.py
+            application.job_queue.run_repeating(world_boss.spawn_world_boss, interval=3600, first=10)
             logger.info("World Boss spawn job scheduled.")
         else:
             logger.error("JobQueue is None! Cannot schedule World Boss spawn.")
     except Exception as e:
         logger.error(f"Error scheduling World Boss job: {e}")
-    # --- END OF FIX ---
-
+    # --- END OF CORRECTION ---
 
     logger.info("Bot is polling...")
     application.run_polling()
