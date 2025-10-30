@@ -7,6 +7,7 @@ from telegram.error import BadRequest
 import game_logic as gl
 
 logger = logging.getLogger(__name__)
+KUNAI_EMOJI = "\U0001FA9A" # <-- FIX for broken emoji
 
 # --- Animation Helper (Handles Captions - unchanged) ---
 async def edit_battle_message(context: ContextTypes.DEFAULT_TYPE, battle_state, text, reply_markup=None):
@@ -90,12 +91,12 @@ async def animate_throw_kunai(context, battle_state, attacker, defender, damage,
     message_text = battle_state['base_text']
     
     # Frame 1: Prepare
-    prep_frame = f"{message_text}\n\n<i><0xF0><0x9F><0xAA><0x9A> {attacker['username']} prepares a kunai...</i>"
+    prep_frame = f"{message_text}\n\n<i>{KUNAI_EMOJI} {attacker['username']} prepares a kunai...</i>"
     await edit_battle_message(context, battle_state, prep_frame)
     await asyncio.sleep(1.0)
     
     # Frame 2: Throw
-    throw_frame = f"{message_text}\n\n<i><0xF0><0x9F><0xAA><0x9A> Throws! ===></i>"
+    throw_frame = f"{message_text}\n\n<i>{KUNAI_EMOJI} Throws! ===></i>"
     await edit_battle_message(context, battle_state, throw_frame)
     await asyncio.sleep(1.0)
     
@@ -109,7 +110,7 @@ async def animate_throw_kunai(context, battle_state, attacker, defender, damage,
     # Frame 4: The Result
     result_text = (
         f"{crit_text}"
-        f"<b><0xF0><0x9F><0xAA><0x9A>🎯 HIT!</b>\n" # Using Kunai emoji
+        f"<b>{KUNAI_EMOJI}🎯 HIT!</b>\n" # Using Kunai emoji
         f"<i>{defender['username']} takes {damage} damage!</i>"
     )
     result_frame = f"{message_text}\n\n{result_text}"
