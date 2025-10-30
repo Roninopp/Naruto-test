@@ -16,11 +16,11 @@ async def show_main_help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
     help_caption += "Select a topic below for detailed instructions:"
 
     keyboard = [
-        [InlineKeyboardButton("👤 Profile Info", callback_data="help_module_profile"), InlineKeyboardButton("🗺️ Mission Guide", callback_data="help_module_missions")],
-        [InlineKeyboardButton("💪 How to Train", callback_data="help_module_training"), InlineKeyboardButton("🌀 Jutsu & Discovery", callback_data="help_module_jutsu")],
-        [InlineKeyboardButton("⚔️ Battle Guide", callback_data="help_module_battle"), InlineKeyboardButton("🛒 Shop Guide", callback_data="help_module_shop")],
+        [InlineKeyboardButton("👤ᴘʀᴏғɪʟᴇ ɪɴғᴏ", callback_data="help_module_profile"), InlineKeyboardButton("🗺️ Mission Guide", callback_data="help_module_missions")],
+        [InlineKeyboardButton("🧘sᴘᴇᴄɪᴀʟ ᴛʀᴀɪɴɪɴɢ", callback_data="help_module_training"), InlineKeyboardButton("🌀 Jutsu & Discovery", callback_data="help_module_jutsu")],
+        [InlineKeyboardButton("⚔️ ʙᴀᴛᴛʟᴇ ᴍᴏᴅᴇs", callback_data="help_module_battle"), InlineKeyboardButton("🛒 Shop Guide", callback_data="help_module_shop")],
         # --- NEW: World Boss Button ---
-        [InlineKeyboardButton("👹 Boss Spawn Guide", callback_data="help_module_boss")]
+        [InlineKeyboardButton("👹 𝐁𝐎𝐒𝐒 𝐒𝐏𝐖𝐀𝐍", callback_data="help_module_boss")]
         # --- END NEW ---
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
