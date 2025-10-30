@@ -32,6 +32,7 @@ import help_handler
 import world_boss 
 import sudo       
 import inventory  
+import animations # Make sure animations is imported if needed, though it's mainly used by other modules
 
 # --- Constants ---
 # --- !!! IMPORTANT: Make sure this is your TEST bot token !!! ---
@@ -43,7 +44,7 @@ START_IMAGE_URL = "https://envs.sh/r6z.jpg"
 # --- Command Handlers (Core) ---
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # (This function is correct from last time)
+    """Handles the /start command with photo and interactive help button."""
     user = update.effective_user
     player = db.get_player(user.id) 
 
@@ -107,8 +108,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(welcome_text, parse_mode="HTML", reply_markup=reply_markup)
 
 
-# --- THIS IS THE FIX for /profile ---
-# --- I have restored the full, working function ---
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the /profile command."""
     user = update.effective_user
@@ -140,7 +139,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chakra_bar = gl.chakra_bar(player.get('current_chakra', total_max_chakra), total_max_chakra)
     exp_needed = gl.get_exp_for_next_level(player.get('level', 1))
 
-    # This is the variable that was missing
+    # This is the variable that was missing before
     profile_text = (
         f"--- 👤 NINJA PROFILE 👤 ---\n\n"
         f"<b>Name:</b> {player.get('username', 'N/A')}\n"
@@ -161,31 +160,52 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     
     await update.message.reply_text(profile_text, parse_mode="HTML")
-# --- END OF /profile FIX ---
 
 
-# --- Callbacks (village_selection - unchanged) ---
+# --- Callbacks ---
 async def village_selection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # (code is the same)
+    """Handles the user's village selection from the inline keyboard."""
     query = update.callback_query; await query.answer()
-    user = query.from_user; village_key = query.data.split('_', 1)[1]
+    user = query.from_user; village_key = query.data.split('_', 1)[1] 
+    
     if db.get_player(user.id):
-        try: await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]]))
-        except Exception as e: logger.warning(f"Error editing reply markup: {e}")
+        try: 
+            await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]]))
+        except Exception as e: 
+            logger.warning(f"Error editing reply markup on village select for existing user: {e}")
         return
+        
     username = user.username if user.username else user.first_name; village_name = gl.VILLAGES[village_key]
     success = db.create_player(user.id, username, village_name)
-    original_caption = query.message.caption or ""; welcome_part = original_caption.split('Your adventure starts now!')[0] if 'Your adventure starts now!' in original_caption else original_caption + "\n\n"
-    new_caption = (f"{welcome_part}" f"<b>You have joined {village_name}!</b>\n\n" "A new path is set. Your training begins now.\n" "Use /profile to check your new status.")
+    original_caption = query.message.caption or ""; 
+    welcome_part = original_caption.split('Your adventure starts now!')[0] if 'Your adventure starts now!' in original_caption else original_caption + "\n\n"
+    
+    new_caption = (
+        f"{welcome_part}" 
+        f"<b>You have joined {village_name}!</b>\n\n" 
+        "A new path is set. Your training begins now.\n" 
+        "Use /profile to check your new status."
+    )
+    
     edit_func = query.edit_message_caption if query.message.photo else query.edit_message_text
+    
     if success:
         logger.info(f"User {username} chose {village_name}")
-        try: await edit_func(new_caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]]))
-        except Exception as e: logger.error(f"Error editing message: {e}"); await query.message.reply_text(new_caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]]))
+        try: 
+            await edit_func(new_caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]])) 
+        except Exception as e: 
+            logger.error(f"Error editing message after village selection: {e}")
+            await query.message.reply_text(new_caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]]))
+            
     else:
-        error_caption = (f"{original_caption}\n\n" + "Error saving choice.")
-        try: await edit_func(error_caption, reply_markup=None)
-        except Exception as e: logger.error(f"Error editing message: {e}")
+        error_caption = (
+             f"{original_caption}\n\n"
+             "An error occurred while saving your choice. Please try /start again."
+        )
+        try: 
+             await edit_func(error_caption, reply_markup=None)
+        except Exception as e: 
+             logger.error(f"Error editing message after village selection error: {e}")
 
 
 # --- Main Bot Setup ---
@@ -203,7 +223,7 @@ def main():
     # Core
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("profile", profile_command))
-    # application.add_handler(CommandHandler("giveexp", give_exp_command)) # REMOVED unsecured command
+    # Note: Unsecured /giveexp is NOT added. Use /sudo_give.
     application.add_handler(CommandHandler("help", help_handler.show_main_help_menu))
     application.add_handler(CommandHandler("inventory", inventory.inventory_command)) # Step 12
 
@@ -224,13 +244,13 @@ def main():
     application.add_handler(CallbackQueryHandler(battle.battle_jutsu_callback, pattern="^battle_jutsu_"))   # PvP Jutsu Select
     application.add_handler(CallbackQueryHandler(battle.battle_item_callback, pattern="^battle_item_"))     # PvP Item Select (Step 12)
 
-    # World Boss
+    # World Boss (Your new module)
     application.add_handler(CommandHandler("enable_world_boss", world_boss.enable_world_boss_command))
     application.add_handler(CommandHandler("boss_status", world_boss.boss_status_command))
     application.add_handler(CallbackQueryHandler(world_boss.boss_action_callback, pattern="^wb_action_")) # Boss Action
     application.add_handler(CallbackQueryHandler(world_boss.boss_jutsu_callback, pattern="^boss_usejutsu_")) # Boss Jutsu Select
 
-    # Sudo
+    # Sudo (Your new module)
     application.add_handler(CommandHandler("server_stats", sudo.server_stats_command))
     application.add_handler(CommandHandler("db_query", sudo.db_query_command))
     application.add_handler(CommandHandler("sudo_give", sudo.sudo_give_command))
@@ -253,7 +273,6 @@ def main():
             application.job_queue.run_repeating(world_boss.spawn_world_boss, interval=3600, first=10)
             logger.info("World Boss spawn job scheduled.")
         else:
-            # This is the error we see, we must fix the install
             logger.error("JobQueue is None! Cannot schedule World Boss spawn. Run: pip install \"python-telegram-bot[job-queue]\"")
     except Exception as e:
         logger.error(f"Error scheduling World Boss job: {e}")
