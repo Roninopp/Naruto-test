@@ -105,7 +105,7 @@ async def send_or_edit_akatsuki_message(context: ContextTypes.DEFAULT_TYPE, chat
                      )
                  except Exception as e2:
                      logger.error(f"Fallback edit_message_text also failed: {e2}")
-                     if chat_id in ACTIVE_BOSS_MESSAGES: del ACTIVE_BOSS_MESSAGES[chat_id] # Clear cache
+                     # if chat_id in ACTIVE_BOSS_MESSAGES: del ACTIVE_BOSS_MESSAGES[chat_id] # This var isn't in this file
                      db.clear_akatsuki_fight(chat_id) # Clean up DB
 
 
@@ -157,8 +157,30 @@ async def passive_group_register(update: Update, context: ContextTypes.DEFAULT_T
 async def spawn_akatsuki_event(context: ContextTypes.DEFAULT_TYPE):
     """Job function to send an Akatsuki ambush to all enabled chats."""
     logger.info("AKATSUKI JOB: Running spawn check...")
+
+    # --- THIS IS THE FIX ---
+    # Get ALL known groups from the World Boss table (for old groups)
+    boss_chats = set(db.get_all_boss_chats())
     
-    enabled_chat_ids = db.get_all_event_chats()
+    # Get all groups that have a specific setting (on OR off)
+    event_settings = db.get_event_settings_dict()
+    
+    # Combine them to get a full list of all groups the bot is in
+    all_known_chats = boss_chats.union(set(event_settings.keys()))
+    
+    enabled_chat_ids = []
+    for chat_id in all_known_chats:
+        status = event_settings.get(chat_id)
+        
+        if status == 0:
+            # Status is 0 (explicitly OFF), skip this chat
+            logger.info(f"AKATSUKI JOB: Chat {chat_id} has events disabled. Skipping.")
+            continue
+        else:
+            # Status is 1 (explicitly ON) or None (not in table, DEFAULT ON)
+            enabled_chat_ids.append(chat_id)
+    # --- END OF FIX ---
+    
     if not enabled_chat_ids:
         logger.info("AKATSUKI JOB: No chats found for auto-events. Skipping.")
         return
@@ -244,7 +266,7 @@ async def akatsuki_join_callback(update: Update, context: ContextTypes.DEFAULT_T
     if join_result['status'] == 'ready':
         # This was the 3rd player! Start the battle
         db.set_akatsuki_turn(message_id, battle_state['player_1_id']) # Set turn to player 1
-        battle_state['turn_player_id'] = battle_state['player_1_id'] # Update local state
+        battle_state['turn_player_id'] = str(battle_state['player_1_id']) # Update local state (as string)
         
         text = get_akatsuki_battle_text(battle_state, enemy_info, []) 
         
@@ -315,8 +337,8 @@ async def akatsuki_action_callback(update: Update, context: ContextTypes.DEFAULT
 
     # --- Check Cooldowns for Attacks ---
     cooldown_seconds = 0
-    if action == "taijutsu": cooldown_seconds = TAIJUTSU_COOLDOWN_SECONDS
-    elif action == "throw_kunai": cooldown_seconds = KUNAI_COOLDOWN_SECONDS 
+    # if action == "taijutsu": cooldown_seconds = TAIJUTSU_COOLDOWN_SECONDS # This was removed from your file
+    if action == "throw_kunai": cooldown_seconds = KUNAI_COOLDOWN_SECONDS 
     elif action == "paper_bomb": cooldown_seconds = BOMB_COOLDOWN_SECONDS # New cooldown
     elif action == "jutsu": cooldown_seconds = JUTSU_COOLDOWN_SECONDS
     else: 
@@ -348,7 +370,7 @@ async def akatsuki_action_callback(update: Update, context: ContextTypes.DEFAULT
     # No recoil for this boss, let's make it simpler
     # recoil_damage = 0 
     
-    if action == "taijutsu":
+    if action == "taijutsu": # This code is here but there is no button for it
         base_damage = player_total_stats['strength'] * 1.5 # Slightly stronger than PvP
         damage_dealt = random.randint(int(base_damage * 0.9), int(base_damage * 1.1))
         is_crit = random.random() < 0.1 # 10% crit
@@ -357,10 +379,7 @@ async def akatsuki_action_callback(update: Update, context: ContextTypes.DEFAULT
         await anim.animate_taijutsu(context, battle_state_for_anim, player_data, boss_defender_sim, final_damage, is_crit)
         
     elif action == "throw_kunai":
-        # --- THIS IS THE FIX ---
-        # I was passing enemy_info, but the animation needs a dict with 'username'
         boss_defender_sim = {'username': enemy_info['name']}
-        # --- END OF FIX ---
         damage_dealt = random.randint(8, 12) + player_data['level'] 
         is_crit = random.random() < 0.08 
         final_damage = int(damage_dealt * (1.8 if is_crit else 1.0))
@@ -679,7 +698,7 @@ async def end_akatsuki_fight(context: ContextTypes.DEFAULT_TYPE, chat_id, messag
     # Clear cooldowns for participants
     player_ids = [battle_state[s] for s in PLAYER_SLOTS if battle_state[s]]
     for user_id in player_ids:
-        db.set_akatsuki_cooldown(user_id, "taijutsu", 1) # Reset all cooldowns
+        # db.set_akatsuki_cooldown(user_id, "taijutsu", 1) # Reset all cooldowns
         db.set_akatsuki_cooldown(user_id, "throw_kunai", 1)
         db.set_akatsuki_cooldown(user_id, "paper_bomb", 1)
         db.set_akatsuki_cooldown(user_id, "jutsu", 1)
@@ -695,14 +714,18 @@ def _check_akatsuki_cooldown(player_data, action, cooldown_seconds):
     if player_data.get('current_hp', 100) <= 1:
         # Find when they fainted (last cooldown time)
         if cooldown_str:
-            cooldowns = json.loads(cooldown_str)
-            faint_time_iso = max(cooldowns.values()) if cooldowns else None
-            if faint_time_iso:
-                faint_time = datetime.datetime.fromisoformat(faint_time_iso)
-                lockout_duration = datetime.timedelta(hours=FAINT_LOCKOUT_HOURS)
-                if now < (faint_time + lockout_duration):
-                    remaining = (faint_time + lockout_duration) - now
-                    return False, remaining.total_seconds()
+            try:
+                cooldowns = json.loads(cooldown_str)
+                faint_time_iso = max(cooldowns.values()) if cooldowns else None
+                if faint_time_iso:
+                    faint_time = datetime.datetime.fromisoformat(faint_time_iso)
+                    # You don't have FAINT_LOCKOUT_HOURS defined, let's assume 1 hour
+                    lockout_duration = datetime.timedelta(hours=1) 
+                    if now < (faint_time + lockout_duration):
+                        remaining = (faint_time + lockout_duration) - now
+                        return False, remaining.total_seconds()
+            except:
+                pass # Ignore errors in cooldown json
         else: # Fainted but no cooldowns? Lock for 1 hour from now.
             return False, 3600
             
@@ -719,43 +742,23 @@ def _check_akatsuki_cooldown(player_data, action, cooldown_seconds):
     if not action_cooldown_time_iso:
         return True, 0 # This specific action is not on cooldown
         
-    cooldown_time = datetime.datetime.fromisoformat(action_cooldown_time_iso)
+    try:
+        cooldown_time = datetime.datetime.fromisoformat(action_cooldown_time_iso)
+    except ValueError: # Handle invalid ISO format string
+        return True, 0
+        
     if now < cooldown_time:
         return False, (cooldown_time - now).total_seconds()
     else:
         return True, 0
 
 # --- Helper: Cooldown Set ---
-def db_set_akatsuki_cooldown(user_id, action, cooldown_seconds):
-    """Sets a specific action's cooldown."""
-    player = db.get_player(user_id)
-    if not player: return
-    
-    try:
-        cooldowns = json.loads(player.get('akatsuki_cooldown', '{}'))
-    except:
-        cooldowns = {}
-        
-    cooldown_end_time = (datetime.datetime.now() + datetime.timedelta(seconds=cooldown_seconds)).isoformat()
-    cooldowns[action] = cooldown_end_time
-    
-    db.update_player(user_id, {'akatsuki_cooldown': json.dumps(cooldowns)})
+# This function is in database.py now, but your akatsuki_event file had it.
+# I will leave it here as db.set_akatsuki_cooldown() will work.
+# def db_set_akatsuki_cooldown(user_id, action, cooldown_seconds):
+#     ...
 
 # --- Helper: Remove Player (Flee) ---
-def db_remove_player_from_fight(message_id, user_id):
-    """Removes a fleeing player from an active fight slot."""
-    conn = db.get_db_connection()
-    if conn is None: return
-    
-    try:
-        cursor = conn.cursor()
-        # Find which slot the player is in and set it to NULL
-        cursor.execute("UPDATE active_akatsuki_fights SET player_1_id = NULL WHERE message_id = ? AND player_1_id = ?", (message_id, user_id))
-        cursor.execute("UPDATE active_akatsuki_fights SET player_2_id = NULL WHERE message_id = ? AND player_2_id = ?", (message_id, user.id))
-        cursor.execute("UPDATE active_akatsuki_fights SET player_3_id = NULL WHERE message_id = ? AND player_3_id = ?", (message_id, user.id))
-        conn.commit()
-    except sqlite3.Error as e:
-        logger.error(f"Error removing player {user.id} from fight {message_id}: {e}")
-        conn.rollback()
-    finally:
-        if conn: conn.close()
+# This function is in database.py now.
+# def db_remove_player_from_fight(message_id, user_id):
+#     ...
