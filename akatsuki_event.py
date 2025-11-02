@@ -281,7 +281,9 @@ async def akatsuki_action_callback(update: Update, context: ContextTypes.DEFAULT
         except: pass
         return
         
-    if battle_state['turn_player_id'] != user.id:
+    # --- THIS IS THE FIX ---
+    if battle_state['turn_player_id'] != str(user.id):
+    # --- END OF FIX ---
         await query.answer("It's not your turn!", show_alert=True)
         return
         
@@ -423,7 +425,9 @@ async def akatsuki_jutsu_callback(update: Update, context: ContextTypes.DEFAULT_
     message_id = query.message.message_id
     
     battle_state = db.get_akatsuki_fight(chat_id, message_id)
-    if not battle_state or battle_state['turn_player_id'] != user.id:
+    # --- THIS IS THE FIX ---
+    if not battle_state or battle_state['turn_player_id'] != str(user.id):
+    # --- END OF FIX ---
         await query.answer("It's not your turn!", show_alert=True); return
         
     player_data = db.get_player(user.id)
@@ -747,11 +751,11 @@ def db_remove_player_from_fight(message_id, user_id):
         cursor = conn.cursor()
         # Find which slot the player is in and set it to NULL
         cursor.execute("UPDATE active_akatsuki_fights SET player_1_id = NULL WHERE message_id = ? AND player_1_id = ?", (message_id, user_id))
-        cursor.execute("UPDATE active_akatsuki_fights SET player_2_id = NULL WHERE message_id = ? AND player_2_id = ?", (message_id, user_id))
-        cursor.execute("UPDATE active_akatsuki_fights SET player_3_id = NULL WHERE message_id = ? AND player_3_id = ?", (message_id, user_id))
+        cursor.execute("UPDATE active_akatsuki_fights SET player_2_id = NULL WHERE message_id = ? AND player_2_id = ?", (message_id, user.id))
+        cursor.execute("UPDATE active_akatsuki_fights SET player_3_id = NULL WHERE message_id = ? AND player_3_id = ?", (message_id, user.id))
         conn.commit()
     except sqlite3.Error as e:
-        logger.error(f"Error removing player {user_id} from fight {message_id}: {e}")
+        logger.error(f"Error removing player {user.id} from fight {message_id}: {e}")
         conn.rollback()
     finally:
         if conn: conn.close()
