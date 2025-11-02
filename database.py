@@ -335,6 +335,24 @@ def get_all_event_chats():
     finally:
         if conn: conn.close()
 
+# --- NEW FUNCTION FOR THE FIX ---
+def get_event_settings_dict():
+    """Gets a dictionary of all event settings {chat_id: status}."""
+    conn = get_db_connection()
+    if conn is None: return {}
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT chat_id, events_enabled FROM group_event_settings")
+        rows = cursor.fetchall()
+        # Return a dictionary like {12345: 1, 67890: 0}
+        return {row['chat_id']: row['events_enabled'] for row in rows}
+    except sqlite3.Error as e:
+        logger.error(f"Error getting event settings dict: {e}")
+        return {}
+    finally:
+        if conn: conn.close()
+# --- END NEW FUNCTION ---
+
 def get_event_status(chat_id):
     """Checks if events are enabled (1) or disabled (0) for a chat."""
     conn = get_db_connection()
