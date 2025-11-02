@@ -10,15 +10,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, filters # Import filters
+# --- THIS IS THE FIX ---
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
     JobQueue,
-    MessageHandler # Import MessageHandler
+    MessageHandler, 
+    filters # filters must be imported from telegram.ext
 )
+# --- END OF FIX ---
 
 # Import our code modules
 import database as db
@@ -34,24 +37,148 @@ import world_boss
 import sudo       
 import inventory  
 import animations 
-import akatsuki_event # <-- NEW: Import Akatsuki event
+import akatsuki_event # <-- Import Akatsuki event
 
 # --- Constants ---
 BOT_TOKEN = "8400754472:AAGqOme2MQq_Bim_FhO2Fr_DJGuUZrBDsBc" # Your Test Bot Token
 START_IMAGE_URL = "https://envs.sh/r6z.jpg" 
 
-# --- (All core commands: start, profile - are unchanged) ---
+# --- (All core commands: start, profile - are unchanged from the FULL version) ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # (code is the same)
-    pass
+    user = update.effective_user
+    player = db.get_player(user.id) 
+    help_button = InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")
+    if player:
+        welcome_text = (
+            f"🔥 Welcome back, {player.get('rank', 'Ninja')} {player.get('username', 'User')} of {player.get('village', 'Unknown Village')}! 🔥\n\n"
+            "The path of the ninja is long and challenging. Continue your training, undertake perilous missions, and prove your strength against rivals!\n\n"
+            "<i>What destiny awaits you today?</i>"
+        )
+        reply_markup = InlineKeyboardMarkup([[help_button]]) 
+        try:
+            await context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                photo=START_IMAGE_URL,
+                caption=welcome_text,
+                parse_mode="HTML", 
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"Failed to send start photo: {e}. Sending text only.")
+            await update.message.reply_text(welcome_text, parse_mode="HTML", reply_markup=reply_markup)
+    else:
+        username = user.username if user.username else user.first_name
+        logger.info(f"New user registration started: {username} (ID: {user.id})")
+        welcome_text = (
+            f"Greetings, {username}! A new legend begins...\n\n"
+            "✨ Welcome to the <b>Shinobi Chronicles RPG</b>! ✨\n\n"
+            "Step into a world inspired by Naruto, where you'll forge your own ninja path. Here you can:\n"
+            "  💪 Train to master powerful techniques\n"
+            "  📜 Embark on challenging missions for glory and reward\n"
+            "  🌀 Discover secret Jutsu combinations\n"
+            "  ⚔️ Test your skills in thrilling PvP battles\n"
+            "  🏆 Rise through the ninja ranks, from humble Academy Student to the legendary Kage!\n\n"
+            "Your adventure starts now! Choose your home village wisely, as it grants unique bonuses:"
+        )
+        village_keyboard = [
+            [InlineKeyboardButton(name, callback_data=f"village_{key}")]
+            for key, name in gl.VILLAGES.items()
+        ]
+        village_keyboard.append([help_button]) 
+        reply_markup = InlineKeyboardMarkup(village_keyboard)
+        try:
+            await context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                photo=START_IMAGE_URL,
+                caption=welcome_text,
+                parse_mode="HTML", 
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"Failed to send start photo: {e}. Sending text only.")
+            await update.message.reply_text(welcome_text, parse_mode="HTML", reply_markup=reply_markup)
+
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # (code is the same)
-    pass
+    """Handles the /profile command."""
+    user = update.effective_user
+    player = db.get_player(user.id)
+    if not player:
+        await update.message.reply_text("You haven't started your journey yet! Use /start to begin.")
+        return
+    player_equipment = json.loads(player.get('equipment', '{}'))
+    total_stats = gl.get_total_stats(player) 
+    equipment_text = ""
+    for slot in ['weapon', 'armor', 'accessory']:
+        item_key = player_equipment.get(slot)
+        if item_key:
+            item_info = gl.SHOP_INVENTORY.get(item_key)
+            if item_info:
+                item_stat_text = [f"+{value} {stat[:3].capitalize()}" for stat, value in item_info.get('stats', {}).items() if value > 0 and stat in total_stats]
+                equipment_text += f"<b>{slot.title()}:</b> {item_info.get('name', 'Unknown Item')} ({', '.join(item_stat_text)})\n"
+        else:
+            equipment_text += f"<b>{slot.title()}:</b> None\n"
+    total_max_hp = total_stats.get('max_hp', gl.BASE_HP)
+    total_max_chakra = total_stats.get('max_chakra', gl.BASE_CHAKRA)
+    hp_bar = gl.health_bar(player.get('current_hp', total_max_hp), total_max_hp)
+    chakra_bar = gl.chakra_bar(player.get('current_chakra', total_max_chakra), total_max_chakra)
+    exp_needed = gl.get_exp_for_next_level(player.get('level', 1))
+    profile_text = (
+        f"--- 👤 NINJA PROFILE 👤 ---\n\n"
+        f"<b>Name:</b> {player.get('username', 'N/A')}\n"
+        f"<b>Village:</b> {player.get('village', 'N/A')}\n"
+        f"<b>Rank:</b> {player.get('rank', 'N/A')}\n"
+        f"<b>Level:</b> {player.get('level', 1)}\n"
+        f"<b>EXP:</b> {player.get('exp', 0)} / {exp_needed}\n"
+        f"<b>Ryo:</b> {player.get('ryo', 0)} 💰\n\n"
+        f"<b>HP:</b>     {hp_bar}\n"
+        f"<b>Chakra:</b> {chakra_bar}\n\n"
+        f"--- TOTAL STATS (with items) ---\n"
+        f"<b>Str:</b> {total_stats.get('strength', 0)} (Base: {player.get('strength', 0)})\n"
+        f"<b>Spd:</b> {total_stats.get('speed', 0)} (Base: {player.get('speed', 0)})\n"
+        f"<b>Int:</b> {total_stats.get('intelligence', 0)} (Base: {player.get('intelligence', 0)})\n"
+        f"<b>Stam:</b> {total_stats.get('stamina', 0)} (Base: {player.get('stamina', 0)})\n\n"
+        f"--- EQUIPMENT ---\n{equipment_text}\n"
+        f"<b>Wins:</b> {player.get('wins', 0)} | <b>Losses:</b> {player.get('losses', 0)}"
+    )
+    await update.message.reply_text(profile_text, parse_mode="HTML")
 
 # --- (village_selection callback is unchanged) ---
 async def village_selection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # (code is the same)
-    pass
+    query = update.callback_query; await query.answer()
+    user = query.from_user; village_key = query.data.split('_', 1)[1] 
+    if db.get_player(user.id):
+        try: 
+            await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]]))
+        except Exception as e: 
+            logger.warning(f"Error editing reply markup on village select for existing user: {e}")
+        return
+    username = user.username if user.username else user.first_name; village_name = gl.VILLAGES[village_key]
+    success = db.create_player(user.id, username, village_name)
+    original_caption = query.message.caption or ""; 
+    welcome_part = original_caption.split('Your adventure starts now!')[0] if 'Your adventure starts now!' in original_caption else original_caption + "\n\n"
+    new_caption = (
+        f"{welcome_part}" 
+        f"<b>You have joined {village_name}!</b>\n\n" 
+        "A new path is set. Your training begins now.\n" 
+        "Use /profile to check your new status."
+    )
+    edit_func = query.edit_message_caption if query.message.photo else query.edit_message_text
+    if success:
+        logger.info(f"User {username} chose {village_name}")
+        try: 
+            await edit_func(new_caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]])) 
+        except Exception as e: 
+            logger.error(f"Error editing message after village selection: {e}")
+            await query.message.reply_text(new_caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]]))
+    else:
+        error_caption = (
+             f"{original_caption}\n\n"
+             "An error occurred while saving your choice. Please try /start again."
+        )
+        try: 
+             await edit_func(error_caption, reply_markup=None)
+        except Exception as e: 
+             logger.error(f"Error editing message after village selection error: {e}")
 
 # --- Main Bot Setup ---
 def main():
@@ -104,13 +231,14 @@ def main():
     application.add_handler(CommandHandler("bot_stats", sudo.bot_stats_command))
     
     # --- NEW: Akatsuki Event Handlers ---
-    application.add_handler(CommandHandler(("auto_fight_off", "auto_fight_on"), akatsuki_event.toggle_auto_fight_command))
+    application.add_handler(CommandHandler(("auto_fight_off", "auto_Ryo_Off"), akatsuki_event.toggle_auto_fight_command))
+    application.add_handler(CommandHandler("auto_fight_on", akatsuki_event.toggle_auto_fight_command))
     application.add_handler(CallbackQueryHandler(akatsuki_event.akatsuki_join_callback, pattern="^akatsuki_join$"))
     application.add_handler(CallbackQueryHandler(akatsuki_event.akatsuki_action_callback, pattern="^akatsuki_action_"))
     application.add_handler(CallbackQueryHandler(akatsuki_event.akatsuki_jutsu_callback, pattern="^akatsuki_jutsu_"))
     
     # This handler passively registers groups. It must be last or have block=False
-    application.add_handler(MessageHandler(filters.ChatType.GROUPS & (~filters.COMMAND), akatsuki_event.passive_group_register), group=-1) # Run in a lower group
+    application.add_handler(MessageHandler(filters.ChatType.GROUPS & (~filters.COMMAND), akatsuki_event.passive_group_register), group=-1) 
     # --- END NEW ---
 
     # Core Callbacks
@@ -127,10 +255,9 @@ def main():
             application.job_queue.run_repeating(world_boss.spawn_world_boss, interval=3600, first=10)
             logger.info("World Boss spawn job scheduled (1 hour).")
             
-            # --- NEW: Akatsuki Event Job (every 5 minutes for testing) ---
+            # Akatsuki Event Job (every 5 minutes for testing)
             application.job_queue.run_repeating(akatsuki_event.spawn_akatsuki_event, interval=300, first=20) # 300 seconds = 5 minutes
             logger.info("Akatsuki Ambush job scheduled (5 minutes).")
-            # --- END NEW ---
             
         else:
             logger.error("JobQueue is None! Cannot schedule jobs. Run: pip install \"python-telegram-bot[job-queue]\"")
