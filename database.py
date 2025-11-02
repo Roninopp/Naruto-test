@@ -5,6 +5,7 @@ import game_logic as gl # Was 'import game_logic'
 # --- END OF FIX ---
 import cache
 import json
+import datetime # Import datetime for cooldowns
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +159,7 @@ def create_tables():
             player_1_id INTEGER DEFAULT NULL,
             player_2_id INTEGER DEFAULT NULL,
             player_3_id INTEGER DEFAULT NULL,
-            turn_player_id TEXT DEFAULT NULL, -- Changed to TEXT to support 'ai_turn'
+            turn_player_id TEXT DEFAULT NULL, 
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
         """)
@@ -370,9 +371,8 @@ def create_akatsuki_fight(message_id, chat_id, enemy_name):
     conn = get_db_connection()
     if conn is None: return
     try:
-        # --- THIS IS THE FIX: Use 'gl' here ---
+        # --- THIS IS THE FIX (Using 'gl') ---
         enemy_info = gl.AKATSUKI_ENEMIES.get(enemy_name)
-        # --- END OF FIX ---
         if not enemy_info: 
             logger.error(f"Invalid enemy_name '{enemy_name}' passed to create_akatsuki_fight.")
             return
@@ -455,7 +455,6 @@ def set_akatsuki_turn(message_id, turn_player_id):
     if conn is None: return
     try:
         cursor = conn.cursor()
-        # Ensure turn_player_id is stored as TEXT
         cursor.execute("UPDATE active_akatsuki_fights SET turn_player_id = ? WHERE message_id = ?", (str(turn_player_id), message_id))
         conn.commit()
     except sqlite3.Error as e:
@@ -478,7 +477,6 @@ def update_akatsuki_fight_hp(message_id, new_hp):
 
 def add_player_damage_to_fight(message_id, user_id, damage_dealt):
     """Adds damage to a player's total for this fight (placeholder)."""
-    # This is still a placeholder.
     logger.info(f"Player {user_id} dealt {damage_dealt} to Akatsuki fight {message_id}")
 
 def clear_akatsuki_fight(chat_id):
@@ -494,7 +492,43 @@ def clear_akatsuki_fight(chat_id):
         logger.error(f"Error clearing akatsuki fight for chat {chat_id}: {e}")
     finally:
         if conn: conn.close()
+
+# --- NEW: Function that was missing ---
+def set_akatsuki_cooldown(user_id, action, cooldown_seconds):
+    """Sets a specific action's cooldown."""
+    player = get_player(user_id) # Use our get_player to handle cache
+    if not player: return
+    
+    try:
+        cooldowns = json.loads(player.get('akatsuki_cooldown', '{}'))
+    except:
+        cooldowns = {}
+        
+    cooldown_end_time = (datetime.datetime.now() + datetime.timedelta(seconds=cooldown_seconds)).isoformat()
+    cooldowns[action] = cooldown_end_time
+    
+    update_player(user_id, {'akatsuki_cooldown': json.dumps(cooldowns)})
+
+# --- NEW: Function that was missing ---
+def remove_player_from_fight(message_id, user_id):
+    """Removes a fleeing player from an active fight slot."""
+    conn = get_db_connection()
+    if conn is None: return
+    
+    try:
+        cursor = conn.cursor()
+        # Find which slot the player is in and set it to NULL
+        cursor.execute("UPDATE active_akatsuki_fights SET player_1_id = NULL WHERE message_id = ? AND player_1_id = ?", (message_id, user_id))
+        cursor.execute("UPDATE active_akatsuki_fights SET player_2_id = NULL WHERE message_id = ? AND player_2_id = ?", (message_id, user_id))
+        cursor.execute("UPDATE active_akatsuki_fights SET player_3_id = NULL WHERE message_id = ? AND player_3_id = ?", (message_id, user_id))
+        conn.commit()
+    except sqlite3.Error as e:
+        logger.error(f"Error removing player {user_id} from fight {message_id}: {e}")
+        conn.rollback()
+    finally:
+        if conn: conn.close()
 # --- END NEW ---
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
