@@ -1,17 +1,20 @@
 import sqlite3
 import logging
-import game_logic
+# --- THIS IS THE FIX ---
+import game_logic as gl # Was 'import game_logic'
+# --- END OF FIX ---
 import cache
 import json
 
 logger = logging.getLogger(__name__)
 
-# --- FIX: Set correct DB file ---
+# --- FIX: Set correct DB file for test repo ---
 DATABASE_FILE = 'test_ninja_rpg.db' 
 # --- END FIX ---
 
 # --- Schema Update Function ---
 def update_schema():
+    """Checks and updates the DB schema with new columns if they don't exist."""
     conn = get_db_connection()
     if conn is None: return
     try:
@@ -48,6 +51,7 @@ def update_schema():
 
 
 def get_db_connection():
+    """Establishes a connection to the SQLite database."""
     try:
         conn = sqlite3.connect(DATABASE_FILE)
         conn.row_factory = sqlite3.Row
@@ -57,6 +61,7 @@ def get_db_connection():
         return None
 
 def create_tables():
+    """Creates all database tables if they don't exist."""
     conn = get_db_connection()
     if conn is None: return
     try:
@@ -78,18 +83,65 @@ def create_tables():
             equipment TEXT DEFAULT '{}', inventory TEXT DEFAULT '[]',
             daily_train_count INTEGER DEFAULT 0, last_train_reset_date TEXT DEFAULT NULL,
             boss_attack_cooldown TEXT DEFAULT NULL, story_progress INTEGER DEFAULT 0,
-            akatsuki_cooldown TEXT DEFAULT NULL -- NEW
+            akatsuki_cooldown TEXT DEFAULT NULL
         );
         """)
         
-        # Other tables (unchanged)
-        cursor.execute("CREATE TABLE IF NOT EXISTS jutsu_discoveries (id INTEGER PRIMARY KEY, combination TEXT UNIQUE, jutsu_name TEXT, discovered_by TEXT, discovered_at TEXT);")
-        cursor.execute("CREATE TABLE IF NOT EXISTS battle_history (id INTEGER PRIMARY KEY, player1_id INTEGER, player2_id INTEGER, winner_id INTEGER, battle_log TEXT, duration_seconds INTEGER, fought_at TEXT);")
-        cursor.execute("CREATE TABLE IF NOT EXISTS world_boss_enabled_chats (chat_id INTEGER PRIMARY KEY, enabled_by_user_id INTEGER, enabled_at TEXT);")
-        cursor.execute("CREATE TABLE IF NOT EXISTS world_boss_status (chat_id INTEGER PRIMARY KEY, is_active INTEGER DEFAULT 0, boss_key TEXT, current_hp INTEGER, max_hp INTEGER, ryo_pool INTEGER, spawn_time TEXT);")
-        cursor.execute("CREATE TABLE IF NOT EXISTS world_boss_damage (id INTEGER PRIMARY KEY, chat_id INTEGER NOT NULL, user_id INTEGER NOT NULL, username TEXT NOT NULL, total_damage INTEGER DEFAULT 0, UNIQUE(chat_id, user_id));")
+        # Jutsu Discoveries Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS jutsu_discoveries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            combination TEXT UNIQUE,
+            jutsu_name TEXT,
+            discovered_by TEXT,
+            discovered_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+        
+        # Battle History Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS battle_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player1_id INTEGER,
+            player2_id INTEGER,
+            winner_id INTEGER,
+            battle_log TEXT,
+            duration_seconds INTEGER,
+            fought_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
 
-        # --- NEW: Auto-Event Tables ---
+        # World Boss Tables
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS world_boss_enabled_chats (
+            chat_id INTEGER PRIMARY KEY,
+            enabled_by_user_id INTEGER,
+            enabled_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        """)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS world_boss_status (
+            chat_id INTEGER PRIMARY KEY,
+            is_active INTEGER DEFAULT 0,
+            boss_key TEXT,
+            current_hp INTEGER,
+            max_hp INTEGER,
+            ryo_pool INTEGER,
+            spawn_time TEXT
+        );
+        """)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS world_boss_damage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            total_damage INTEGER DEFAULT 0,
+            UNIQUE(chat_id, user_id)
+        );
+        """)
+
+        # Akatsuki Event Tables
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS group_event_settings (
             chat_id INTEGER PRIMARY KEY,
@@ -106,11 +158,10 @@ def create_tables():
             player_1_id INTEGER DEFAULT NULL,
             player_2_id INTEGER DEFAULT NULL,
             player_3_id INTEGER DEFAULT NULL,
-            turn_player_id INTEGER DEFAULT NULL,
+            turn_player_id TEXT DEFAULT NULL, -- Changed to TEXT to support 'ai_turn'
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
         """)
-        # --- END NEW ---
         
         conn.commit()
         logger.info("Database tables checked/created successfully.")
@@ -121,11 +172,12 @@ def create_tables():
         conn.close()
 
 def get_player(user_id):
+    """Fetches a player's data from cache or database."""
     cached_player = cache.get_player_cache(user_id)
-    if cached_player and 'akatsuki_cooldown' in cached_player: # Check for new column
+    if cached_player and 'akatsuki_cooldown' in cached_player: 
         return cached_player
     else:
-        cache.clear_player_cache(user_id) # Cache is old
+        cache.clear_player_cache(user_id) 
 
     conn = get_db_connection()
     if conn is None: return None
@@ -146,24 +198,25 @@ def get_player(user_id):
         conn.close()
 
 def create_player(user_id, username, village):
+    """Creates a new player in the database."""
     conn = get_db_connection()
     if conn is None: return False
     try:
         base_stats = {'strength': 10, 'speed': 10, 'intelligence': 10, 'stamina': 10}
-        initial_stats = game_logic.distribute_stats(base_stats, 0)
+        initial_stats = gl.distribute_stats(base_stats, 0)
         cursor = conn.cursor()
         cursor.execute(
             """
             INSERT INTO players
             (user_id, username, village, max_hp, current_hp, max_chakra, current_chakra,
              strength, speed, intelligence, stamina, equipment, inventory,
-             daily_train_count, last_train_reset_date, boss_attack_cooldown, story_progress, akatsuki_cooldown) -- NEW
+             daily_train_count, last_train_reset_date, boss_attack_cooldown, story_progress, akatsuki_cooldown)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (user_id, username, village,
              initial_stats['max_hp'], initial_stats['max_hp'], initial_stats['max_chakra'], initial_stats['max_chakra'],
              initial_stats['strength'], initial_stats['speed'], initial_stats['intelligence'], initial_stats['stamina'],
-             '{}', '[]', 0, None, None, 0, None) # NEW: Default value
+             '{}', '[]', 0, None, None, 0, None) 
         )
         conn.commit()
         logger.info(f"New player created: {username} (ID: {user_id}) in {village}")
@@ -176,6 +229,7 @@ def create_player(user_id, username, village):
         conn.close()
 
 def update_player(user_id, updates):
+    """Dynamically updates a player's data."""
     conn = get_db_connection()
     if conn is None: return False
     try:
@@ -186,7 +240,7 @@ def update_player(user_id, updates):
         cursor = conn.cursor()
         cursor.execute(query, tuple(values))
         conn.commit()
-        logger.info(f"Player {user_id} updated in DB: {list(updates.keys())}") # Log keys
+        logger.info(f"Player {user_id} updated in DB: {list(updates.keys())}") 
         cache.clear_player_cache(user_id)
         return True
     except sqlite3.Error as e:
@@ -195,18 +249,61 @@ def update_player(user_id, updates):
     finally:
         conn.close()
 
-# (World Boss DB functions are unchanged)
+
+# --- World Boss DB Functions ---
 def enable_boss_chat(chat_id, user_id):
-    # ... (code is the same)
-    pass
+    """Adds a chat to the enabled list for world boss."""
+    conn = get_db_connection()
+    if conn is None: return False
+    try:
+        cursor = conn.cursor()
+        cursor.execute("INSERT OR IGNORE INTO world_boss_enabled_chats (chat_id, enabled_by_user_id) VALUES (?, ?)", (chat_id, user_id))
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        logger.error(f"Error enabling world_boss for chat {chat_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
 def get_all_boss_chats():
-    # ... (code is the same)
-    pass
+    """Gets a list of all chat IDs where world_boss is enabled."""
+    conn = get_db_connection()
+    if conn is None: return []
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT chat_id FROM world_boss_enabled_chats")
+        rows = cursor.fetchall()
+        return [row['chat_id'] for row in rows] 
+    except sqlite3.Error as e:
+        logger.error(f"Error getting all world_boss chats: {e}")
+        return []
+    finally:
+        conn.close()
+
 def get_boss_status(chat_id):
-    # ... (code is the same)
-    pass
+    """Gets the current boss status for a specific chat."""
+    conn = get_db_connection()
+    if conn is None: return None
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM world_boss_status WHERE chat_id = ?", (chat_id,))
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+        else:
+            cursor.execute("INSERT INTO world_boss_status (chat_id, is_active) VALUES (?, 0)", (chat_id,))
+            conn.commit()
+            return {'chat_id': chat_id, 'is_active': 0, 'boss_key': None, 'current_hp': 0, 'max_hp': 0, 'ryo_pool': 0, 'spawn_time': None}
+    except sqlite3.Error as e:
+        logger.error(f"Error getting boss status for chat {chat_id}: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
     
-# --- NEW: Akatsuki Auto-Event DB Functions ---
+# --- Akatsuki Auto-Event DB Functions ---
 
 def register_event_chat(chat_id):
     """Passively adds a chat to the settings table. Does not overwrite existing."""
@@ -240,7 +337,7 @@ def get_all_event_chats():
 def get_event_status(chat_id):
     """Checks if events are enabled (1) or disabled (0) for a chat."""
     conn = get_db_connection()
-    if conn is None: return 1 # Default to on if DB fails
+    if conn is None: return 1 
     try:
         cursor = conn.cursor()
         cursor.execute("SELECT events_enabled FROM group_event_settings WHERE chat_id = ?", (chat_id,))
@@ -248,7 +345,7 @@ def get_event_status(chat_id):
         if row:
             return row['events_enabled']
         else:
-            return 1 # Default to on
+            return 1 
     except sqlite3.Error as e:
         logger.error(f"Error getting event status for chat {chat_id}: {e}")
         return 1 
@@ -273,8 +370,12 @@ def create_akatsuki_fight(message_id, chat_id, enemy_name):
     conn = get_db_connection()
     if conn is None: return
     try:
+        # --- THIS IS THE FIX: Use 'gl' here ---
         enemy_info = gl.AKATSUKI_ENEMIES.get(enemy_name)
-        if not enemy_info: return
+        # --- END OF FIX ---
+        if not enemy_info: 
+            logger.error(f"Invalid enemy_name '{enemy_name}' passed to create_akatsuki_fight.")
+            return
         
         cursor = conn.cursor()
         cursor.execute(
@@ -312,20 +413,17 @@ def add_player_to_fight(message_id, chat_id, user_id):
     
     try:
         cursor = conn.cursor()
-        # First, check if fight exists and get its state
         cursor.execute("SELECT * FROM active_akatsuki_fights WHERE message_id = ? AND chat_id = ?", (message_id, chat_id))
         fight = cursor.fetchone()
         
         if not fight:
-            return {'status': 'failed'} # Fight doesn't exist
+            return {'status': 'failed'} 
 
         fight_dict = dict(fight)
         
-        # Check if already joined
         if user_id in [fight_dict['player_1_id'], fight_dict['player_2_id'], fight_dict['player_3_id']]:
             return {'status': 'already_joined'}
             
-        # Find first empty slot
         empty_slot = None
         if fight_dict['player_1_id'] is None:
             empty_slot = 'player_1_id'
@@ -334,17 +432,15 @@ def add_player_to_fight(message_id, chat_id, user_id):
         elif fight_dict['player_3_id'] is None:
             empty_slot = 'player_3_id'
         else:
-            return {'status': 'full'} # No empty slots
+            return {'status': 'full'} 
             
-        # Join the fight
         cursor.execute(f"UPDATE active_akatsuki_fights SET {empty_slot} = ? WHERE message_id = ?", (user_id, message_id))
         conn.commit()
         
-        # Check if that was the last slot
         if empty_slot == 'player_3_id':
-            return {'status': 'ready'} # Fight is full and ready to start
+            return {'status': 'ready'} 
         else:
-            return {'status': 'joined'} # Joined, but waiting for more
+            return {'status': 'joined'} 
             
     except sqlite3.Error as e:
         logger.error(f"Error adding player {user_id} to fight {message_id}: {e}")
@@ -359,7 +455,8 @@ def set_akatsuki_turn(message_id, turn_player_id):
     if conn is None: return
     try:
         cursor = conn.cursor()
-        cursor.execute("UPDATE active_akatsuki_fights SET turn_player_id = ? WHERE message_id = ?", (turn_player_id, message_id))
+        # Ensure turn_player_id is stored as TEXT
+        cursor.execute("UPDATE active_akatsuki_fights SET turn_player_id = ? WHERE message_id = ?", (str(turn_player_id), message_id))
         conn.commit()
     except sqlite3.Error as e:
         logger.error(f"Error setting akatsuki turn for {message_id}: {e}")
@@ -380,9 +477,8 @@ def update_akatsuki_fight_hp(message_id, new_hp):
         if conn: conn.close()
 
 def add_player_damage_to_fight(message_id, user_id, damage_dealt):
-    """Adds damage to a player's total for this fight (simplified, no new table)."""
-    # This is a placeholder. For a real system, we'd need a separate damage table
-    # like the world boss. For now, we'll skip tracking damage totals.
+    """Adds damage to a player's total for this fight (placeholder)."""
+    # This is still a placeholder.
     logger.info(f"Player {user_id} dealt {damage_dealt} to Akatsuki fight {message_id}")
 
 def clear_akatsuki_fight(chat_id):
