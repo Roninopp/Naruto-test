@@ -27,6 +27,11 @@ FLEE_COOLDOWN_SECONDS = 60
 AKATSUKI_REWARDS = {'exp': 110, 'ryo': 180}
 PLAYER_SLOTS = ['player_1_id', 'player_2_id', 'player_3_id']
 
+# --- NEW: SET EVENT TIMEOUT (in minutes) ---
+# 5 minutes for testing. Change to 180 for 3 hours.
+EVENT_TIMEOUT_MINUTES = 5
+# --- END NEW ---
+
 # --- Helper: Get Battle Text ---
 def get_akatsuki_battle_text(battle_state, enemy_info, players_list):
     """Generates the text for the interactive battle message."""
@@ -62,7 +67,7 @@ def get_akatsuki_battle_text(battle_state, enemy_info, players_list):
                 hp_display = "<b>(Fainted)</b>"
                 
             text += f" {i+1}. {player_data['username']} [Lvl {player_data['level']}] {hp_display}\n"
-            if player_id == turn_player_id:
+            if str(player_id) == str(turn_player_id): # Compare as strings
                 turn_player_name = player_data['username']
         else:
              text += f" {i+1}. <i>(Waiting...)</i>\n"
@@ -158,33 +163,25 @@ async def spawn_akatsuki_event(context: ContextTypes.DEFAULT_TYPE):
     """Job function to send an Akatsuki ambush to all enabled chats."""
     logger.info("AKATSUKI JOB: Running spawn check...")
 
-    # --- THIS IS THE FIX ---
-    # Get ALL known groups from the World Boss table (for old groups)
+    # --- (Get all chats - this logic is correct from last time) ---
     boss_chats = set(db.get_all_boss_chats())
-    
-    # Get all groups that have a specific setting (on OR off)
     event_settings = db.get_event_settings_dict()
-    
-    # Combine them to get a full list of all groups the bot is in
     all_known_chats = boss_chats.union(set(event_settings.keys()))
     
     enabled_chat_ids = []
     for chat_id in all_known_chats:
         status = event_settings.get(chat_id)
-        
         if status == 0:
-            # Status is 0 (explicitly OFF), skip this chat
             logger.info(f"AKATSUKI JOB: Chat {chat_id} has events disabled. Skipping.")
             continue
         else:
-            # Status is 1 (explicitly ON) or None (not in table, DEFAULT ON)
             enabled_chat_ids.append(chat_id)
-    # --- END OF FIX ---
     
     if not enabled_chat_ids:
         logger.info("AKATSUKI JOB: No chats found for auto-events. Skipping.")
         return
 
+    # --- (Get enemy info - this is also correct) ---
     enemy_key = 'sasuke_clone' 
     enemy_info = gl.AKATSUKI_ENEMIES.get(enemy_key)
     if not enemy_info:
@@ -201,28 +198,60 @@ async def spawn_akatsuki_event(context: ContextTypes.DEFAULT_TYPE):
     button = InlineKeyboardButton("⚔️ Protect Village!", callback_data="akatsuki_join")
     reply_markup = InlineKeyboardMarkup([[button]])
 
+    # --- MODIFIED LOOP WITH TIMEOUT ---
+    now = datetime.datetime.now()
+    timeout_duration = datetime.timedelta(minutes=EVENT_TIMEOUT_MINUTES)
+
     for chat_id in enabled_chat_ids:
-        if db.get_akatsuki_fight(chat_id): # Check if fight active in this chat
-            logger.info(f"AKATSUKI JOB: Fight already active in chat {chat_id}. Skipping.")
-            continue
-            
-        try:
-            message = await context.bot.send_photo(
-                chat_id=chat_id,
-                photo=enemy_info['image'],
-                caption=message_text,
-                reply_markup=reply_markup,
-                parse_mode="HTML"
-            )
-            db.create_akatsuki_fight(message.message_id, chat_id, enemy_key)
-            logger.info(f"AKATSUKI JOB: Sent ambush {message.message_id} to chat {chat_id}")
-            await asyncio.sleep(1) 
-            
-        except Exception as e:
-            logger.error(f"AKATSUKI JOB: Failed to send ambush to chat {chat_id}: {e}")
-            if "forbidden" in str(e).lower() or "bot was kicked" in str(e).lower():
-                logger.warning(f"AKATSUKI JOB: Bot forbidden in chat {chat_id}. Disabling events.")
-                db.toggle_auto_events(chat_id, 0)
+        battle_state = db.get_akatsuki_fight(chat_id) # Check if fight active in this chat
+
+        if battle_state:
+            # --- NEW TIMEOUT LOGIC ---
+            try:
+                # Timestamps in DB are like '2025-11-02 13:19:09'
+                created_at_time = datetime.datetime.fromisoformat(battle_state['created_at'])
+                
+                if (now - created_at_time) > timeout_duration:
+                    logger.warning(f"AKATSUKI JOB: Fight in chat {chat_id} timed out. Clearing.")
+                    try:
+                        # Try to send a message
+                        await context.bot.send_message(chat_id, "The Akatsuki member got bored of waiting and left...")
+                    except Exception as e:
+                        logger.error(f"AKATSUKI JOB: Failed to send timeout message to chat {chat_id}: {e}")
+                    
+                    db.clear_akatsuki_fight(chat_id) # Clear the old fight
+                    battle_state = None # Set to None so a new fight can be spawned
+                
+                else:
+                    # Fight is active but not timed out
+                    logger.info(f"AKATSUKI JOB: Fight already active in chat {chat_id}. Skipping.")
+                    continue # Skip to the next chat_id
+
+            except Exception as e:
+                logger.error(f"AKATSUKI JOB: Error checking timestamp for chat {chat_id}: {e}. Clearing fight.")
+                db.clear_akatsuki_fight(chat_id) # Clear broken fight
+                battle_state = None
+            # --- END NEW TIMEOUT LOGIC ---
+
+        if not battle_state:
+            # Spawn a new fight
+            try:
+                message = await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=enemy_info['image'],
+                    caption=message_text,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML"
+                )
+                db.create_akatsuki_fight(message.message_id, chat_id, enemy_key)
+                logger.info(f"AKATSUKI JOB: Sent ambush {message.message_id} to chat {chat_id}")
+                await asyncio.sleep(1) 
+                
+            except Exception as e:
+                logger.error(f"AKATSUKI JOB: Failed to send ambush to chat {chat_id}: {e}")
+                if "forbidden" in str(e).lower() or "bot was kicked" in str(e).lower():
+                    logger.warning(f"AKATSUKI JOB: Bot forbidden in chat {chat_id}. Disabling events.")
+                    db.toggle_auto_events(chat_id, 0)
 
     logger.info("AKATSUKI JOB: Finished spawn check.")
 
@@ -589,14 +618,15 @@ async def _run_ai_turn(context: ContextTypes.DEFAULT_TYPE, chat_id, message_id, 
 async def _next_turn(context: ContextTypes.DEFAULT_TYPE, chat_id, message_id, battle_state, enemy_info, next_turn_id=None):
     """Passes the turn to the next player or the AI."""
     
+    current_player_id_str = str(battle_state['turn_player_id'])
+    player_ids_list_str = [str(battle_state[s]) if battle_state[s] else None for s in PLAYER_SLOTS]
+
     if next_turn_id: # Used by AI to force turn back to Player 1
         pass # Will be handled below
     else:
         # Find current player's index
-        current_turn_id = battle_state['turn_player_id']
         try:
-            player_ids_list = [battle_state[s] for s in PLAYER_SLOTS]
-            current_index = player_ids_list.index(current_turn_id)
+            current_index = player_ids_list_str.index(current_player_id_str)
         except ValueError:
             current_index = -1 
 
@@ -604,7 +634,7 @@ async def _next_turn(context: ContextTypes.DEFAULT_TYPE, chat_id, message_id, ba
             next_turn_id = battle_state['player_2_id']
         elif current_index == 1: # Was Player 2's turn
             next_turn_id = battle_state['player_3_id']
-        else: # Was Player 3's turn
+        else: # Was Player 3's turn (or index -1)
             next_turn_id = 'ai_turn'
             
     # --- Check if next player is valid (not None or fainted) ---
@@ -616,13 +646,13 @@ async def _next_turn(context: ContextTypes.DEFAULT_TYPE, chat_id, message_id, ba
             # Recursively call _next_turn, passing the fainted player's ID as the *current* turn
             # This will make the logic advance to the *next* player after them
             temp_state = battle_state.copy()
-            temp_state['turn_player_id'] = next_turn_id 
+            temp_state['turn_player_id'] = str(next_turn_id) # Pass as string
             await _next_turn(context, chat_id, message_id, temp_state, enemy_info)
             return # Stop this instance
 
     # --- Turn is valid ---
-    db.set_akatsuki_turn(message_id, next_turn_id)
-    battle_state['turn_player_id'] = next_turn_id # Update local state
+    db.set_akatsuki_turn(message_id, str(next_turn_id)) # Store as string
+    battle_state['turn_player_id'] = str(next_turn_id) # Update local state
     
     # Get updated text (shows new player HPs)
     text = get_akatsuki_battle_text(battle_state, enemy_info, [])
