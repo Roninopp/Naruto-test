@@ -256,7 +256,7 @@ AKATSUKI_ENEMIES = {
         'intelligence': 15,
         'max_hp': 200,
         # --- THIS IS THE FIX ---
-        'image': 'https://envs.sh/Nam.jpg' # Your new image URL
+        'image': 'https://envs.sh/NMW.jpg' # Your new image URL
         # --- END OF FIX ---
     },
     # We can add 'itachi_clone', 'kisame_clone' etc. later
