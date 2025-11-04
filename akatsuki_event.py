@@ -6,6 +6,10 @@ import asyncio
 import random
 import time 
 
+# --- FIX: IMPORT TIMEZONE ---
+from datetime import timezone
+# --- END FIX ---
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ChatType
@@ -198,8 +202,8 @@ async def spawn_akatsuki_event(context: ContextTypes.DEFAULT_TYPE):
     button = InlineKeyboardButton("⚔️ Protect Village!", callback_data="akatsuki_join")
     reply_markup = InlineKeyboardMarkup([[button]])
 
-    # --- MODIFIED LOOP WITH TIMEOUT ---
-    now = datetime.datetime.now()
+    # --- MODIFIED LOOP WITH TIMEZONE FIX ---
+    now = datetime.datetime.now(timezone.utc) # Get current time in UTC
     timeout_duration = datetime.timedelta(minutes=EVENT_TIMEOUT_MINUTES)
 
     for chat_id in enabled_chat_ids:
@@ -208,10 +212,16 @@ async def spawn_akatsuki_event(context: ContextTypes.DEFAULT_TYPE):
         if battle_state:
             # --- NEW TIMEOUT LOGIC ---
             try:
-                # Timestamps in DB are like '2025-11-02 13:19:09'
-                created_at_time = datetime.datetime.fromisoformat(battle_state['created_at'])
+                # DB stores as 'YYYY-MM-DD HH:MM:SS' which is UTC
+                created_at_str = battle_state['created_at']
+                # Parse the string into a naive datetime object
+                created_at_time_naive = datetime.datetime.strptime(created_at_str, '%Y-%m-%d %H:%M:%S')
                 
-                if (now - created_at_time) > timeout_duration:
+                # Make the naive datetime object "aware" that it is in UTC
+                created_at_time_aware = created_at_time_naive.replace(tzinfo=timezone.utc) 
+                
+                # Now we can safely compare two UTC-aware times
+                if (now - created_at_time_aware) > timeout_duration:
                     logger.warning(f"AKATSUKI JOB: Fight in chat {chat_id} timed out. Clearing.")
                     try:
                         # Try to send a message
@@ -224,7 +234,7 @@ async def spawn_akatsuki_event(context: ContextTypes.DEFAULT_TYPE):
                 
                 else:
                     # Fight is active but not timed out
-                    logger.info(f"AKATSUKI JOB: Fight already active in chat {chat_id}. Skipping.")
+                    logger.info(f"AKATSUKI JOB: Fight active in chat {chat_id} (not timed out). Skipping.")
                     continue # Skip to the next chat_id
 
             except Exception as e:
@@ -738,7 +748,7 @@ async def end_akatsuki_fight(context: ContextTypes.DEFAULT_TYPE, chat_id, messag
 def _check_akatsuki_cooldown(player_data, action, cooldown_seconds):
     """Checks a specific action's cooldown."""
     cooldown_str = player_data.get('akatsuki_cooldown')
-    now = datetime.datetime.now()
+    now = datetime.datetime.now() # This check uses local time, which is fine
     
     # Faint check
     if player_data.get('current_hp', 100) <= 1:
