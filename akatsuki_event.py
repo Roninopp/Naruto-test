@@ -220,8 +220,9 @@ async def spawn_akatsuki_event(context: ContextTypes.DEFAULT_TYPE):
                 # Make the naive datetime object "aware" that it is in UTC
                 created_at_time_aware = created_at_time_naive.replace(tzinfo=timezone.utc) 
                 
-                # Now we can safely compare two UTC-aware times
-                if (now - created_at_time_aware) > timeout_duration:
+                # --- THIS IS THE FIX: Changed > to >= ---
+                if (now - created_at_time_aware) >= timeout_duration:
+                # --- END OF FIX ---
                     logger.warning(f"AKATSUKI JOB: Fight in chat {chat_id} timed out. Clearing.")
                     try:
                         # Try to send a message
