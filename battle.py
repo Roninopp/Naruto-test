@@ -82,7 +82,7 @@ async def end_battle(context: ContextTypes.DEFAULT_TYPE, battle_id, winner_id, l
         chat_id=chat_id, message_id=message_id, text=text,
         reply_markup=None, parse_mode="HTML"
     )
-    cooldown_time = (datetime.datetime.now() + datetime.timedelta(minutes=BATTLE_COOLDOWN_MINUTES)).isoformat()
+    cooldown_time = (datetime.datetime.now() + datetime.timedelta(minutes=BATTLE_COOLDOWN_MINUTES))
     winner_exp_gain = loser['level'] * 10; winner_ryo_gain = loser['level'] * 20
     winner['wins'] += 1; winner['battle_cooldown'] = cooldown_time; winner['exp'] += winner_exp_gain
     winner['total_exp'] += winner_exp_gain; winner['ryo'] += winner_ryo_gain
@@ -113,7 +113,8 @@ async def battle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     now = datetime.datetime.now()
     for player in [p1, p2]:
         if player['battle_cooldown']:
-            cooldown_time = datetime.datetime.fromisoformat(player['battle_cooldown'])
+            # DB returns datetime object now, no need to parse from isoformat
+            cooldown_time = player['battle_cooldown']
             if now < cooldown_time:
                 remaining = (cooldown_time - now).seconds // 60 + 1
                 await update.message.reply_text(f"{player['username']} is on battle cooldown for {remaining} more minute(s)."); return
@@ -149,9 +150,6 @@ async def battle_invite_callback(update: Update, context: ContextTypes.DEFAULT_T
 async def battle_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles main battle actions: Taijutsu, Jutsu, Flee, AND ITEM"""
     query = update.callback_query
-    # --- THIS IS THE FIX ---
-    # We REMOVE await query.answer() from here
-    # --- END OF FIX ---
     
     parts = query.data.split('_'); action = parts[2]; player_id_str = parts[3]
     player_id = int(player_id_str)
@@ -168,8 +166,6 @@ async def battle_action_callback(update: Update, context: ContextTypes.DEFAULT_T
     defender_id = [pid for pid in battle_state['players'] if pid != player_id][0]
     defender = battle_state['players'][defender_id]
     chat_id = battle_state['chat_id']; message_id = battle_state['message_id']
-    
-    # We will answer silently *before* processing, *unless* there's an error
     
     if action == "flee":
         await query.answer() # Answer silently
@@ -193,19 +189,20 @@ async def battle_action_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     if action == "jutsu":
-        # --- FIX: Check for errors BEFORE answering ---
         if attacker['level'] < gl.JUTSU_LIBRARY['fireball']['level_required']:
             await query.answer("You must be at least Level 5 to use jutsus!", show_alert=True)
-            return # Don't proceed
-        try: known_jutsus = json.loads(attacker['known_jutsus'])
-        except: known_jutsus = []
+            return
+            
+        # --- THIS IS THE FIX ---
+        known_jutsus = attacker.get('known_jutsus') or []
+        # --- END OF FIX ---
+        
         if not known_jutsus:
             await query.answer("You don't know any jutsus! Use /combine to learn some.", show_alert=True)
-            return # Don't proceed
+            return
         
-        # If checks pass, NOW answer silently and show menu
         await query.answer() 
-        await anim.edit_battle_message(context, battle_state, f"{battle_state['base_text']}\n\n<i>Processing turn...</i>", reply_markup=None) # Show processing
+        await anim.edit_battle_message(context, battle_state, f"{battle_state['base_text']}\n\n<i>Processing turn...</i>", reply_markup=None) 
         
         keyboard = []
         for jutsu_name_key in known_jutsus:
@@ -218,12 +215,13 @@ async def battle_action_callback(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     if action == "item":
-        # --- FIX: Check for errors BEFORE answering ---
-        try: inventory_list = json.loads(attacker['inventory'])
-        except: inventory_list = []
+        # --- THIS IS THE FIX ---
+        inventory_list = attacker.get('inventory') or []
+        # --- END OF FIX ---
+        
         if not inventory_list:
             await query.answer("Your inventory is empty!", show_alert=True)
-            return # Don't proceed
+            return
         
         item_counts = Counter(inventory_list)
         usable_items = {}
@@ -234,11 +232,10 @@ async def battle_action_callback(update: Update, context: ContextTypes.DEFAULT_T
                  
         if not usable_items:
              await query.answer("You have no usable items in your inventory!", show_alert=True)
-             return # Don't proceed
+             return
 
-        # If checks pass, NOW answer silently and show menu
         await query.answer()
-        await anim.edit_battle_message(context, battle_state, f"{battle_state['base_text']}\n\n<i>Processing turn...</i>", reply_markup=None) # Show processing
+        await anim.edit_battle_message(context, battle_state, f"{battle_state['base_text']}\n\n<i>Processing turn...</i>", reply_markup=None)
 
         keyboard = []
         for item_key, item_info in usable_items.items():
@@ -247,7 +244,6 @@ async def battle_action_callback(update: Update, context: ContextTypes.DEFAULT_T
         keyboard.append([InlineKeyboardButton("Cancel", callback_data=f"battle_item_{player_id}_cancel")])
         await anim.edit_battle_message(context, battle_state, f"{battle_state['base_text']}\n\nSelect an item to use:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
-    # --- END OF FIX ---
 
 async def battle_jutsu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # (This function is fine, but we'll add chakra/cancel checks before answering)
@@ -276,10 +272,8 @@ async def battle_jutsu_callback(update: Update, context: ContextTypes.DEFAULT_TY
     
     if attacker['current_chakra'] < jutsu_info['chakra_cost']:
         await query.answer("Not enough chakra!", show_alert=True)
-        # Don't proceed, just close the alert
         return
         
-    # All checks passed, NOW answer silently
     await query.answer()
     await anim.edit_battle_message(context, battle_state, f"{battle_state['base_text']}\n\n<i>Processing turn...</i>", reply_markup=None)
     attacker['current_chakra'] -= jutsu_info['chakra_cost']
@@ -318,21 +312,20 @@ async def battle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.answer(); await query.message.reply_text("Error: Invalid item selected.")
         await send_battle_menu(context, battle_state, message_id); return
 
-    try: inventory_list = json.loads(attacker['inventory'])
-    except: inventory_list = []
+    # --- THIS IS THE FIX ---
+    inventory_list = attacker.get('inventory') or []
+    # --- END OF FIX ---
     
     if item_key not in inventory_list:
         await query.answer("You don't have that item!", show_alert=True)
         await send_battle_menu(context, battle_state, message_id); return
 
-    # --- Use the Item ---
-    # All checks passed, NOW answer silently
     await query.answer()
     await anim.edit_battle_message(context, battle_state, f"{battle_state['base_text']}\n\n<i>Using {item_info['name']}...</i>", reply_markup=None)
     
     inventory_list.remove(item_key) 
     item_effect_text = ""
-    updates_to_save = {'inventory': json.dumps(inventory_list)}
+    updates_to_save = {'inventory': inventory_list} # db.update_player will handle JSON
 
     if item_key == 'health_potion':
         heal_amount = item_info['stats']['heal']
@@ -343,7 +336,6 @@ async def battle_item_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         
         if actual_heal <= 0:
              item_effect_text = "Your HP is already full!"
-             # Don't end turn, let them choose again
              await anim.edit_battle_message(context, battle_state, f"{battle_state['base_text']}\n\n<i>{item_effect_text}</i>")
              await asyncio.sleep(2) # Pause to read
              await send_battle_menu(context, battle_state, message_id)
