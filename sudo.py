@@ -1,9 +1,11 @@
 import logging
-import sqlite3
+# import sqlite3 <-- REMOVED
+import psycopg2 # <-- ADDED
 import json
 import psutil # For server stats
 import os
 import functools # For the decorator
+import datetime # <-- ADDED
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -17,6 +19,15 @@ logger = logging.getLogger(__name__)
 # --- !!! YOUR OWNER ID !!! ---
 OWNER_ID = 6837532865
 # -----------------------------
+
+# --- NEW: Custom JSON converter for /get_user ---
+class DateTimeEncoder(json.JSONEncoder):
+    """Converts datetime objects to strings for JSON."""
+    def default(self, obj):
+        if isinstance(obj, (datetime.date, datetime.datetime)):
+            return obj.isoformat()
+        return super().default(obj)
+# --- END NEW ---
 
 # --- Decorator for Owner Check ---
 def owner_only(func):
@@ -56,7 +67,7 @@ async def server_stats_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 @owner_only
 async def db_query_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (code is the same) ...
+    # --- THIS FUNCTION IS REWRITTEN FOR POSTGRESQL ---
     if not context.args:
         await update.message.reply_text("Please provide a SQL query. Example: `/db_query SELECT * FROM players WHERE user_id = 123`")
         return
@@ -64,30 +75,36 @@ async def db_query_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not query.strip().upper().startswith("SELECT"):
         await update.message.reply_text("⚠️ **Error:** Only SELECT queries are allowed for safety.")
         return
+        
     conn = None
     try:
         conn = db.get_db_connection()
         if conn is None:
-            await update.message.reply_text("Failed to connect to the database.")
+            await update.message.reply_text("Failed to connect to the database pool.")
             return
-        cursor = conn.cursor()
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        if not rows:
-            await update.message.reply_text("Query executed successfully, but no results found.")
-            return
-        results_text = f"📊 **Query Results** (Limit 10 rows):\n\n```\n"
-        headers = [description[0] for description in cursor.description]
-        results_text += " | ".join(headers) + "\n"
-        results_text += "-" * (len(" | ".join(headers))) + "\n"
-        for i, row in enumerate(rows[:10]):
-            row_dict = dict(row)
-            results_text += " | ".join(map(str, row_dict.values())) + "\n"
-        if len(rows) > 10:
-            results_text += f"\n... (truncated, {len(rows) - 10} more rows)\n"
-        results_text += "```"
-        await update.message.reply_text(results_text, parse_mode="HTML")
-    except sqlite3.Error as e:
+            
+        with conn.cursor() as cursor:
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            if not rows:
+                await update.message.reply_text("Query executed successfully, but no results found.")
+                return
+            
+            results_text = f"📊 **Query Results** (Limit 10 rows):\n\n```\n"
+            headers = [description[0] for description in cursor.description]
+            results_text += " | ".join(headers) + "\n"
+            results_text += "-" * (len(" | ".join(headers))) + "\n"
+            
+            for i, row in enumerate(rows[:10]):
+                # Manually build the row string from the tuple
+                results_text += " | ".join(map(str, row)) + "\n"
+                
+            if len(rows) > 10:
+                results_text += f"\n... (truncated, {len(rows) - 10} more rows)\n"
+            results_text += "```"
+            await update.message.reply_text(results_text, parse_mode="HTML")
+            
+    except psycopg2.Error as e: # <-- Changed from sqlite3.Error
         logger.error(f"Error executing DB query '{query}': {e}")
         await update.message.reply_text(f"❌ **Database Error:**\n`{e}`", parse_mode="HTML")
     except Exception as e:
@@ -95,11 +112,12 @@ async def db_query_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ **Error:**\n`{e}`", parse_mode="HTML")
     finally:
         if conn:
-            conn.close()
+            db.put_db_connection(conn) # <-- Return connection to pool
+    # --- END OF FIX ---
 
 @owner_only
 async def sudo_give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (code is the same) ...
+    # ... (This function is fine, it uses db.get_player and db.update_player) ...
     args = context.args
     if len(args) != 3:
         await update.message.reply_text("Usage: `/sudo_give <user_id> <ryo|exp> <amount>`\nExample: `/sudo_give 12345 ryo 5000`")
@@ -139,7 +157,7 @@ async def sudo_give_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def sudo_set_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (code is the same) ...
+    # ... (This function is fine, it uses db.get_player and db.update_player) ...
     args = context.args
     valid_stats = ['level', 'exp', 'ryo', 'strength', 'speed', 'intelligence', 'stamina', 'current_hp', 'current_chakra', 'max_hp', 'max_chakra', 'wins', 'losses']
     if len(args) != 3:
@@ -173,7 +191,7 @@ async def sudo_set_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @owner_only
 async def list_boss_chats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (code is the same) ...
+    # ... (This function is fine, it uses db.get_all_boss_chats) ...
     enabled_chat_ids = db.get_all_boss_chats()
     if not enabled_chat_ids:
         await update.message.reply_text("World Boss is not enabled in any chats yet.")
@@ -183,7 +201,7 @@ async def list_boss_chats_command(update: Update, context: ContextTypes.DEFAULT_
 
 @owner_only
 async def sudo_leave_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (code is the same) ...
+    # ... (This function is fine, no DB calls) ...
     if not context.args:
         await update.message.reply_text("Usage: `/sudo_leave <chat_id>`")
         return
@@ -203,7 +221,7 @@ async def sudo_leave_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 @owner_only
 async def get_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # ... (code is the same) ...
+    # ... (This function is fine, it uses db.get_player) ...
     if not context.args:
         await update.message.reply_text("Usage: `/get_user <user_id>`")
         return
@@ -216,8 +234,14 @@ async def get_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player_data:
         await update.message.reply_text(f"Player with ID {target_user_id} not found in the database.")
         return
+        
     user_info_text = f"👤 **User Data for ID: {target_user_id}** 👤\n\n```json\n"
-    user_info_text += json.dumps(player_data, indent=2)
+    
+    # --- THIS IS THE FIX ---
+    # Use the new DateTimeEncoder to handle timestamps from the DB
+    user_info_text += json.dumps(player_data, indent=2, cls=DateTimeEncoder)
+    # --- END OF FIX ---
+    
     user_info_text += "\n```"
     MAX_MSG_LENGTH = 4096
     if len(user_info_text) <= MAX_MSG_LENGTH:
@@ -237,22 +261,27 @@ async def get_user_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @owner_only
 async def bot_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Shows overall bot statistics."""
+    # --- THIS FUNCTION IS REWRITTEN FOR POSTGRESQL ---
     conn = None
     user_count = 0
     try:
         conn = db.get_db_connection()
         if conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM players")
-            result = cursor.fetchone()
-            user_count = result[0] if result else 0
-    except sqlite3.Error as e:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT COUNT(*) FROM players")
+                result = cursor.fetchone()
+                user_count = result[0] if result else 0
+        else:
+            await update.message.reply_text("Error retrieving user count (db connection failed).")
+            return
+    except psycopg2.Error as e: # <-- Changed from sqlite3.Error
         logger.error(f"Error getting user count for bot_stats: {e}")
         await update.message.reply_text("Error retrieving user count.")
-        return # Don't continue if DB fails
+        return
     finally:
         if conn:
-            conn.close()
+            db.put_db_connection(conn) # <-- Return connection to pool
+    # --- END OF FIX ---
 
     # Get active group count (World Boss enabled)
     active_group_count = len(db.get_all_boss_chats())
