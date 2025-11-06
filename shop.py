@@ -60,26 +60,22 @@ async def shop_buy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if item_info['type'] in ['weapon', 'armor', 'accessory']:
         # --- THIS IS THE FIX ---
-        if isinstance(player['equipment'], str):
-            equipment = json.loads(player['equipment'])
-        else:
-            equipment = player['equipment'] # It's already a dict from cache
+        # player.get('equipment') is already a dict
+        equipment = player.get('equipment') or {}
         # --- END OF FIX ---
         
         equipment[item_info['type']] = item_key
-        updates_to_save['equipment'] = json.dumps(equipment)
+        updates_to_save['equipment'] = equipment # db.update_player handles the json conversion
         await query.message.reply_text(f"You bought and equipped the {item_info['name']}!")
 
     else: # Consumable
         # --- THIS IS THE FIX ---
-        if isinstance(player['inventory'], str):
-            inventory = json.loads(player['inventory'])
-        else:
-            inventory = player['inventory'] # It's already a list from cache
+        # player.get('inventory') is already a list
+        inventory = player.get('inventory') or []
         # --- END OF FIX ---
         
         inventory.append(item_key)
-        updates_to_save['inventory'] = json.dumps(inventory)
+        updates_to_save['inventory'] = inventory # db.update_player handles the json conversion
         await query.message.reply_text(f"You bought a {item_info['name']}! It has been added to your inventory.")
 
     success = db.update_player(user.id, updates_to_save)
