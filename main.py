@@ -40,7 +40,7 @@ import animations
 import akatsuki_event # <-- Import Akatsuki event
 
 # --- Constants ---
-BOT_TOKEN = "8424528396:AAG-fYttHVxwBgozIRRH8hByeF8FPOhxySQ" # Your Test Bot Token
+BOT_TOKEN = "7307409890:AAFPJfxlPd2wua6kx0rFN6Sx7Bx9Z9t0Vyk" # Your Test Bot Token
 START_IMAGE_URL = "https://envs.sh/r6z.jpg" 
 
 # --- (All core commands: start, profile - are unchanged from the FULL version) ---
