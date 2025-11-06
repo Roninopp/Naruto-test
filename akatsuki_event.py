@@ -343,9 +343,7 @@ async def akatsuki_action_callback(update: Update, context: ContextTypes.DEFAULT
         except: pass
         return
         
-    # --- THIS IS THE FIX ---
     if battle_state['turn_player_id'] != str(user.id):
-    # --- END OF FIX ---
         await query.answer("It's not your turn!", show_alert=True)
         return
         
@@ -402,8 +400,9 @@ async def akatsuki_action_callback(update: Update, context: ContextTypes.DEFAULT
         if player_data['level'] < gl.JUTSU_LIBRARY['fireball']['level_required']: 
              await query.answer("You need Level 5+ to use Jutsus!", show_alert=True)
              return
-        try: known_jutsus_list = json.loads(player_data['known_jutsus'])
-        except: known_jutsus_list = []
+             
+        # player_data['known_jutsus'] is already a list
+        known_jutsus_list = player_data.get('known_jutsus') or []
         if not known_jutsus_list:
             await query.answer("You don't know any Jutsus! Use /combine.", show_alert=True)
             return
@@ -483,9 +482,7 @@ async def akatsuki_jutsu_callback(update: Update, context: ContextTypes.DEFAULT_
     message_id = query.message.message_id
     
     battle_state = db.get_akatsuki_fight(chat_id, message_id)
-    # --- THIS IS THE FIX ---
     if not battle_state or battle_state['turn_player_id'] != str(user.id):
-    # --- END OF FIX ---
         await query.answer("It's not your turn!", show_alert=True); return
         
     player_data = db.get_player(user.id)
@@ -747,15 +744,19 @@ async def end_akatsuki_fight(context: ContextTypes.DEFAULT_TYPE, chat_id, messag
 # --- Helper: Cooldown Check ---
 def _check_akatsuki_cooldown(player_data, action, cooldown_seconds):
     """Checks a specific action's cooldown."""
-    cooldown_str = player_data.get('akatsuki_cooldown')
+    
+    # --- THIS IS THE FIX ---
+    # player_data['akatsuki_cooldown'] is now a dict or None
+    cooldowns = player_data.get('akatsuki_cooldown') or {}
+    # --- END OF FIX ---
+    
     now = datetime.datetime.now() # This check uses local time, which is fine
     
     # Faint check
     if player_data.get('current_hp', 100) <= 1:
         # Find when they fainted (last cooldown time)
-        if cooldown_str:
+        if cooldowns:
             try:
-                cooldowns = json.loads(cooldown_str)
                 faint_time_iso = max(cooldowns.values()) if cooldowns else None
                 if faint_time_iso:
                     faint_time = datetime.datetime.fromisoformat(faint_time_iso)
@@ -765,19 +766,11 @@ def _check_akatsuki_cooldown(player_data, action, cooldown_seconds):
                         remaining = (faint_time + lockout_duration) - now
                         return False, remaining.total_seconds()
             except:
-                pass # Ignore errors in cooldown json
+                pass # Ignore errors
         else: # Fainted but no cooldowns? Lock for 1 hour from now.
             return False, 3600
             
     # Not fainted, check action cooldown
-    if not cooldown_str:
-        return True, 0 # No cooldowns set
-        
-    try:
-        cooldowns = json.loads(cooldown_str)
-    except:
-        cooldowns = {}
-        
     action_cooldown_time_iso = cooldowns.get(action)
     if not action_cooldown_time_iso:
         return True, 0 # This specific action is not on cooldown
@@ -793,8 +786,7 @@ def _check_akatsuki_cooldown(player_data, action, cooldown_seconds):
         return True, 0
 
 # --- Helper: Cooldown Set ---
-# This function is in database.py now, but your akatsuki_event file had it.
-# I will leave it here as db.set_akatsuki_cooldown() will work.
+# This function is in database.py now.
 # def db_set_akatsuki_cooldown(user_id, action, cooldown_seconds):
 #     ...
 
