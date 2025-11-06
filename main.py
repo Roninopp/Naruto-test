@@ -119,7 +119,12 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not player:
         await update.message.reply_text("You haven't started your journey yet! Use /start to begin.")
         return
-    player_equipment = json.loads(player.get('equipment', '{}'))
+        
+    # --- THIS IS THE FIX ---
+    # player.get('equipment') is already a dict from the new database
+    player_equipment = player.get('equipment') or {}
+    # --- END OF FIX ---
+    
     total_stats = gl.get_total_stats(player) 
     equipment_text = ""
     for slot in ['weapon', 'armor', 'accessory']:
