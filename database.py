@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 # PASTE YOUR *NEW* CONNECTION STRING HERE
 # (The one you get AFTER you click "Reset password")
 # Make sure it is inside the quotes.
-DATABASE_URL = "psql 'postgresql://neondb_owner:npg_ZBiVmpx5rCR6@ep-fragrant-feather-a4eur7c4-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'" 
+DATABASE_URL = "postgresql://neondb_owner:npg_ZBiVmpx5rCR6@ep-fragrant-feather-a4eur7c4-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'" 
 # --- END ---
 
 
