@@ -255,9 +255,12 @@ def main():
             application.job_queue.run_repeating(world_boss.spawn_world_boss, interval=3600, first=10)
             logger.info("World Boss spawn job scheduled (1 hour).")
             
-            # Akatsuki Event Job (every 5 minutes for testing)
-            application.job_queue.run_repeating(akatsuki_event.spawn_akatsuki_event, interval=300, first=20) # 300 seconds = 5 minutes
-            logger.info("Akatsuki Ambush job scheduled (5 minutes).")
+            # --- THIS IS THE FIX ---
+            # Akatsuki Event Job (every 3 hours)
+            # 10800 seconds = 3 hours
+            application.job_queue.run_repeating(akatsuki_event.spawn_akatsuki_event, interval=10800, first=20) 
+            logger.info("Akatsuki Ambush job scheduled (3 hours).")
+            # --- END OF FIX ---
             
         else:
             logger.error("JobQueue is None! Cannot schedule jobs. Run: pip install \"python-telegram-bot[job-queue]\"")
