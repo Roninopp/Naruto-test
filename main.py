@@ -47,14 +47,25 @@ START_IMAGE_URL = "https://envs.sh/r6z.jpg"
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     player = db.get_player(user.id) 
+    
+    # --- FIX: Define all buttons here ---
     help_button = InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")
+    summon_button = InlineKeyboardButton("SUMMON ME", url="https://t.me/Naruto_gameXBot?startgroup=true")
+    updates_button = InlineKeyboardButton("UPDATES", url="https://t.me/SN_Telegram_bots_Stores")
+    # --- END FIX ---
+    
     if player:
         welcome_text = (
             f"🔥 Welcome back, {player.get('rank', 'Ninja')} {player.get('username', 'User')} of {player.get('village', 'Unknown Village')}! 🔥\n\n"
             "The path of the ninja is long and challenging. Continue your training, undertake perilous missions, and prove your strength against rivals!\n\n"
             "<i>What destiny awaits you today?</i>"
         )
-        reply_markup = InlineKeyboardMarkup([[help_button]]) 
+        # --- FIX: Add new buttons for returning players ---
+        reply_markup = InlineKeyboardMarkup([
+            [help_button], 
+            [summon_button, updates_button]
+        ]) 
+        # --- END FIX ---
         try:
             await context.bot.send_photo(
                 chat_id=update.effective_chat.id,
@@ -80,12 +91,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "  🏆 Rise through the ninja ranks, from humble Academy Student to the legendary Kage!\n\n"
             "Your adventure starts now! Choose your home village wisely, as it grants unique bonuses:"
         )
+        # --- FIX: Add new buttons for new players ---
         village_keyboard = [
             [InlineKeyboardButton(name, callback_data=f"village_{key}")]
             for key, name in gl.VILLAGES.items()
         ]
         village_keyboard.append([help_button]) 
+        village_keyboard.append([summon_button, updates_button]) # Add new row
         reply_markup = InlineKeyboardMarkup(village_keyboard)
+        # --- END FIX ---
         try:
             await context.bot.send_photo(
                 chat_id=update.effective_chat.id,
@@ -163,13 +177,21 @@ async def village_selection_callback(update: Update, context: ContextTypes.DEFAU
         "Use /profile to check your new status."
     )
     edit_func = query.edit_message_caption if query.message.photo else query.edit_message_text
+    
+    # --- FIX: Add new buttons after registration ---
+    help_button = InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")
+    summon_button = InlineKeyboardButton("SUMMON ME", url="https://t.me/Naruto_gameXBot?startgroup=true")
+    updates_button = InlineKeyboardButton("UPDATES", url="https://t.me/SN_Telegram_bots_Stores")
+    final_markup = InlineKeyboardMarkup([[help_button], [summon_button, updates_button]])
+    # --- END FIX ---
+    
     if success:
         logger.info(f"User {username} chose {village_name}")
         try: 
-            await edit_func(new_caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]])) 
+            await edit_func(new_caption, parse_mode="HTML", reply_markup=final_markup) 
         except Exception as e: 
             logger.error(f"Error editing message after village selection: {e}")
-            await query.message.reply_text(new_caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❓ Help & Commands", callback_data="show_main_help")]]))
+            await query.message.reply_text(new_caption, parse_mode="HTML", reply_markup=final_markup)
     else:
         error_caption = (
              f"{original_caption}\n\n"
