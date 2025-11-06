@@ -1,12 +1,20 @@
 import redis
 import json
 import logging
+import datetime # <--- NEW IMPORT
 
 logger = logging.getLogger(__name__)
 
+# --- NEW: Custom JSON converter ---
+class DateTimeEncoder(json.JSONEncoder):
+    """Converts datetime objects to strings for JSON."""
+    def default(self, obj):
+        if isinstance(obj, (datetime.date, datetime.datetime)):
+            return obj.isoformat()
+        return super().default(obj)
+# --- END NEW ---
+
 # --- Redis Connection ---
-# This connects to a standard Redis install on the same machine.
-# decode_responses=True makes it return strings instead of bytes.
 try:
     redis_conn = redis.Redis(decode_responses=True)
     redis_conn.ping()
@@ -24,10 +32,11 @@ def set_player_cache(user_id, player_data):
         return
         
     try:
-        # We store the player's dict as a JSON string
-        # We set an expiration of 1 hour (3600 seconds)
-        # This auto-clears old data.
-        redis_conn.set(f"player:{user_id}", json.dumps(player_data), ex=3600)
+        # --- THIS IS THE FIX ---
+        # Use the new DateTimeEncoder to handle timestamps
+        json_data = json.dumps(player_data, cls=DateTimeEncoder)
+        redis_conn.set(f"player:{user_id}", json_data, ex=3600)
+        # --- END OF FIX ---
     except Exception as e:
         logger.error(f"Failed to set cache for player {user_id}: {e}")
 
