@@ -31,10 +31,10 @@ FLEE_COOLDOWN_SECONDS = 60
 AKATSUKI_REWARDS = {'exp': 110, 'ryo': 180}
 PLAYER_SLOTS = ['player_1_id', 'player_2_id', 'player_3_id']
 
-# --- NEW: SET EVENT TIMEOUT (in minutes) ---
-# 5 minutes for testing. Change to 180 for 3 hours.
-EVENT_TIMEOUT_MINUTES = 5
-# --- END NEW ---
+# --- THIS IS THE FIX (3 hours) ---
+# 180 minutes = 3 hours
+EVENT_TIMEOUT_MINUTES = 180
+# --- END OF FIX ---
 
 # --- Helper: Get Battle Text ---
 def get_akatsuki_battle_text(battle_state, enemy_info, players_list):
@@ -397,50 +397,18 @@ async def akatsuki_action_callback(update: Update, context: ContextTypes.DEFAULT
         
     player_total_stats = gl.get_total_stats(player_data)
     
-    await query.answer() # Answer silently now
-    
-    battle_state_for_anim = {
-        'chat_id': chat_id, 'message_id': message_id,
-        'base_text': get_akatsuki_battle_text(battle_state, enemy_info, []).split("\n\nTurn:")[0],
-        'players': {user.id: player_data}, 'turn': user.id
-    }
-    await send_or_edit_akatsuki_message(context, chat_id, message_id, f"{battle_state_for_anim['base_text']}\n\n<i>Turn: {player_data['username']}</i>\nProcessing attack...", None, None)
-    
-    final_damage = 0
-    # No recoil for this boss, let's make it simpler
-    # recoil_damage = 0 
-    
-    if action == "taijutsu": # This code is here but there is no button for it
-        base_damage = player_total_stats['strength'] * 1.5 # Slightly stronger than PvP
-        damage_dealt = random.randint(int(base_damage * 0.9), int(base_damage * 1.1))
-        is_crit = random.random() < 0.1 # 10% crit
-        final_damage = int(damage_dealt * (2.0 if is_crit else 1.0))
-        boss_defender_sim = {'username': enemy_info['name']} 
-        await anim.animate_taijutsu(context, battle_state_for_anim, player_data, boss_defender_sim, final_damage, is_crit)
-        
-    elif action == "throw_kunai":
-        boss_defender_sim = {'username': enemy_info['name']}
-        damage_dealt = random.randint(8, 12) + player_data['level'] 
-        is_crit = random.random() < 0.08 
-        final_damage = int(damage_dealt * (1.8 if is_crit else 1.0))
-        await anim.animate_throw_kunai(context, battle_state_for_anim, player_data, boss_defender_sim, final_damage, is_crit) 
-        
-    elif action == "paper_bomb":
-        damage_dealt = (random.randint(15, 25) + player_data['level'] * 2)
-        is_crit = random.random() < 0.12 
-        final_damage = int(damage_dealt * (2.0 if is_crit else 1.0))
-        boss_defender_sim = {'name': enemy_info['name']} # Paper Bomb anim uses 'name'
-        await anim.animate_paper_bomb(context, battle_state_for_anim, player_data, boss_defender_sim, final_damage, is_crit)
-        
-    elif action == "jutsu":
+    # --- THIS IS THE JUTSU BUTTON FIX (part 1) ---
+    if action == "jutsu":
         if player_data['level'] < gl.JUTSU_LIBRARY['fireball']['level_required']: 
-             await query.answer("You need Level 5+ to use Jutsus!", show_alert=True); 
-             await send_or_edit_akatsuki_message(context, chat_id, message_id, get_akatsuki_battle_text(battle_state, enemy_info, []), None, query.message.reply_markup); return
+             await query.answer("You need Level 5+ to use Jutsus!", show_alert=True)
+             return
         try: known_jutsus_list = json.loads(player_data['known_jutsus'])
         except: known_jutsus_list = []
         if not known_jutsus_list:
-            await query.answer("You don't know any Jutsus! Use /combine.", show_alert=True); 
-            await send_or_edit_akatsuki_message(context, chat_id, message_id, get_akatsuki_battle_text(battle_state, enemy_info, []), None, query.message.reply_markup); return
+            await query.answer("You don't know any Jutsus! Use /combine.", show_alert=True)
+            return
+        
+        await query.answer() # Answer silently *after* checks pass
         
         keyboard = []; available_jutsus = 0
         for jutsu_key in known_jutsus_list:
@@ -453,13 +421,44 @@ async def akatsuki_action_callback(update: Update, context: ContextTypes.DEFAULT
                 else:
                     button_text = f"🚫 {jutsu_info['name']} ({jutsu_info['chakra_cost']} Chakra)"
                     keyboard.append([InlineKeyboardButton(button_text, callback_data="akatsuki_nochakra")])
+        
         if available_jutsus == 0:
-             await query.answer("Not enough Chakra for any Jutsu!", show_alert=True)
-             await send_or_edit_akatsuki_message(context, chat_id, message_id, get_akatsuki_battle_text(battle_state, enemy_info, []), None, query.message.reply_markup); return
+             # We already answered query, so edit message to show error
+             base_text = get_akatsuki_battle_text(battle_state, enemy_info, []).split("\n\nTurn:")[0]
+             await send_or_edit_akatsuki_message(context, chat_id, message_id, f"{base_text}\n\n<i>Not enough Chakra for any Jutsu!</i>", None, query.message.reply_markup)
+             return
         
         keyboard.append([InlineKeyboardButton("Cancel", callback_data="akatsuki_jutsu_cancel")])
-        await send_or_edit_akatsuki_message(context, chat_id, message_id, f"{battle_state_for_anim['base_text']}\n\nSelect a Jutsu:", None, InlineKeyboardMarkup(keyboard))
+        base_text = get_akatsuki_battle_text(battle_state, enemy_info, []).split("\n\nTurn:")[0]
+        await send_or_edit_akatsuki_message(context, chat_id, message_id, f"{base_text}\n\nSelect a Jutsu:", None, InlineKeyboardMarkup(keyboard))
         return # Jutsu selection happens in akatsuki_jutsu_callback
+    # --- END OF JUTSU BUTTON FIX ---
+
+    # --- Handle Kunai and Bomb ---
+    await query.answer() # Answer silently now
+    
+    battle_state_for_anim = {
+        'chat_id': chat_id, 'message_id': message_id,
+        'base_text': get_akatsuki_battle_text(battle_state, enemy_info, []).split("\n\nTurn:")[0],
+        'players': {user.id: player_data}, 'turn': user.id
+    }
+    await send_or_edit_akatsuki_message(context, chat_id, message_id, f"{battle_state_for_anim['base_text']}\n\n<i>Turn: {player_data['username']}</i>\nProcessing attack...", None, None)
+    
+    final_damage = 0
+    
+    if action == "throw_kunai":
+        boss_defender_sim = {'username': enemy_info['name']}
+        damage_dealt = random.randint(8, 12) + player_data['level'] 
+        is_crit = random.random() < 0.08 
+        final_damage = int(damage_dealt * (1.8 if is_crit else 1.0))
+        await anim.animate_throw_kunai(context, battle_state_for_anim, player_data, boss_defender_sim, final_damage, is_crit) 
+        
+    elif action == "paper_bomb":
+        damage_dealt = (random.randint(15, 25) + player_data['level'] * 2)
+        is_crit = random.random() < 0.12 
+        final_damage = int(damage_dealt * (2.0 if is_crit else 1.0))
+        boss_defender_sim = {'name': enemy_info['name']} # Paper Bomb anim uses 'name'
+        await anim.animate_paper_bomb(context, battle_state_for_anim, player_data, boss_defender_sim, final_damage, is_crit)
         
     # --- Update DB after non-Jutsu Attacks ---
     new_enemy_hp = max(0, battle_state['enemy_hp'] - final_damage)
