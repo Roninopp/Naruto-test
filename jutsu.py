@@ -21,7 +21,10 @@ async def jutsus_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You must /start your journey first.")
         return
 
-    known_jutsus = json.loads(player['known_jutsus']) # Convert JSON string from DB to list
+    # --- THIS IS THE FIX ---
+    # player['known_jutsus'] is already a list from the new database
+    known_jutsus = player.get('known_jutsus') or []
+    # --- END OF FIX ---
 
     if not known_jutsus:
         await update.message.reply_text("You have not learned any jutsus yet. Use /combine to discover them!")
@@ -75,8 +78,11 @@ async def combine_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Player Found a Jutsu! ---
     jutsu_info = gl.JUTSU_LIBRARY[discovered_jutsu_name]
     
-    # Check if they already know it
-    known_jutsus = json.loads(player['known_jutsus'])
+    # --- THIS IS THE FIX ---
+    # player['known_jutsus'] is already a list
+    known_jutsus = player.get('known_jutsus') or []
+    # --- END OF FIX ---
+    
     if discovered_jutsu_name in known_jutsus:
         await update.message.reply_text(f"You already know {discovered_jutsu_name.replace('_', ' ').title()}.")
         return
@@ -93,8 +99,8 @@ async def combine_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- SUCCESS! Add Jutsu to Player ---
     known_jutsus.append(discovered_jutsu_name)
     
-    # Save the new list back to the DB as a JSON string
-    player_data = {'known_jutsus': json.dumps(known_jutsus)}
+    # db.update_player will handle converting the list to JSON for the DB
+    player_data = {'known_jutsus': known_jutsus}
     db.update_player(user.id, player_data)
     
     # Play the discovery animation
