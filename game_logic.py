@@ -188,8 +188,12 @@ def distribute_stats(player_stats, points_to_add):
 
 def get_total_stats(player_data):
     total_stats = {'strength': player_data['strength'], 'speed': player_data['speed'], 'intelligence': player_data['intelligence'], 'stamina': player_data['stamina']}
-    try: player_equipment = json.loads(player_data['equipment'])
-    except json.JSONDecodeError: player_equipment = {}
+    
+    # --- THIS IS THE FIX ---
+    # player_data['equipment'] is already a dict from the new database
+    player_equipment = player_data.get('equipment') or {}
+    # --- END OF FIX ---
+    
     for slot, item_key in player_equipment.items():
         if item_key:
             item_info = SHOP_INVENTORY.get(item_key)
