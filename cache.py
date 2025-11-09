@@ -1,7 +1,7 @@
 import redis
 import json
 import logging
-import datetime # <--- NEW IMPORT
+import datetime # <--- IMPORTANT IMPORT
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,6 @@ def get_player_cache(user_id):
         cached_data = redis_conn.get(f"player:{user_id}")
         if cached_data:
             logger.info(f"CACHE HIT for player {user_id}")
-            # Convert the JSON string back into a Python dict
             return json.loads(cached_data)
         
         logger.info(f"CACHE MISS for player {user_id}")
@@ -68,3 +67,14 @@ def clear_player_cache(user_id):
         logger.info(f"CACHE CLEARED for player {user_id}")
     except Exception as e:
         logger.error(f"Failed to clear cache for player {user_id}: {e}")
+
+def flush_all_cache():
+    """Wipes the ENTIRE Redis cache clean."""
+    if not redis_conn: return False
+    try:
+        redis_conn.flushdb()
+        logger.info("⚠️ ALL REDIS CACHE FLUSHED ⚠️")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to flush Redis: {e}")
+        return False

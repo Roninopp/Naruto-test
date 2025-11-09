@@ -1,6 +1,7 @@
 import logging
 import json
-import sqlite3
+# import sqlite3 <-- REMOVED
+import psycopg2 # <-- ADDED
 import datetime
 import asyncio
 import random
@@ -25,7 +26,7 @@ JUTSU_COOLDOWN_SECONDS = 180
 FAINT_LOCKOUT_HOURS = 1
 ACTIVE_BOSS_MESSAGES = {} 
 
-# --- (All helper functions: get_boss_battle_text, send_or_edit_boss_message, enable_world_boss, boss_status_command are unchanged) ---
+# --- (Helper functions: get_boss_battle_text, send_or_edit_boss_message, enable_world_boss, boss_status_command are unchanged) ---
 def get_boss_battle_text(boss_status, boss_info, chat_id):
     top_damage = _get_top_damage_dealers(chat_id, limit=3) 
     text = (
@@ -65,6 +66,7 @@ async def send_or_edit_boss_message(context: ContextTypes.DEFAULT_TYPE, chat_id,
         else:
             image_path = boss_info.get('image', 'images/default_boss.png') 
             try:
+                # This check might fail on ephemeral systems, but we'll try
                 with open(image_path, 'rb') as f: pass 
                 photo_input = open(image_path, 'rb')
             except FileNotFoundError:
@@ -77,11 +79,13 @@ async def send_or_edit_boss_message(context: ContextTypes.DEFAULT_TYPE, chat_id,
                 )
                 ACTIVE_BOSS_MESSAGES[chat_id] = message.message_id 
                 logger.info(f"Sent new boss message for chat {chat_id}, msg_id: {message.message_id}")
+                photo_input.close() # Close the file handle
             else: 
                  message = await context.bot.send_message(
                       chat_id=chat_id, text=text, reply_markup=reply_markup, parse_mode="HTML"
                  )
                  logger.warning(f"Sent boss message as text due to missing image for chat {chat_id}")
+                 ACTIVE_BOSS_MESSAGES[chat_id] = message.message_id # Save message_id even for text
     except Exception as e:
         if "Message is not modified" not in str(e): 
             logger.error(f"Error sending/editing boss message for chat {chat_id}: {e}")
@@ -161,10 +165,6 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         time_unit = "seconds"; time_val = remaining_seconds
         if cooldown_seconds == JUTSU_COOLDOWN_SECONDS: time_unit = "minutes"; time_val = remaining_seconds / 60
         await query.answer(f"⏳ On cooldown! Wait {time_val:.1f} {time_unit}.", show_alert=True); return
-
-    # --- THIS IS THE FIX ---
-    # The silent query.answer() that was here is GONE.
-    # --- END OF FIX ---
     
     player_total_stats = gl.get_total_stats(player_data)
     
@@ -205,18 +205,19 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         new_cooldown_time_iso = (datetime.datetime.now() + datetime.timedelta(seconds=KUNAI_COOLDOWN_SECONDS)).isoformat()
         
     elif action == "jutsu":
-        # --- FIX: Checks happen *before* any answer ---
         if player_data['level'] < gl.JUTSU_LIBRARY['fireball']['level_required']: 
              await query.answer("You need Level 5+ to use Jutsus!", show_alert=True); 
-             return # Stop here, do not reshow menu
+             return
         
-        try: known_jutsus_list = json.loads(player_data['known_jutsus'])
-        except: known_jutsus_list = []
+        # --- THIS IS THE FIX ---
+        known_jutsus_list = player_data.get('known_jutsus') or []
+        # --- END OF FIX ---
+        
         if not known_jutsus_list:
             await query.answer("You don't know any Jutsus! Use /combine.", show_alert=True); 
-            return # Stop here
+            return
         
-        await query.answer() # Answer silently now that checks pass
+        await query.answer() 
         await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\n<i>Processing attack...</i>", reply_markup=None) 
         
         keyboard = []; available_jutsus = 0
@@ -231,7 +232,6 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                     button_text = f"🚫 {jutsu_info['name']} ({jutsu_info['chakra_cost']} Chakra)"
                     keyboard.append([InlineKeyboardButton(button_text, callback_data="boss_nochakra")])
         if available_jutsus == 0:
-             # Pop-up was already checked, but let's re-check and edit
              await anim.edit_battle_message(context, battle_state_for_anim, f"{battle_state_for_anim['base_text']}\n\n<i>Not enough Chakra for any Jutsu!</i>")
              await asyncio.sleep(2) 
              await send_or_edit_boss_message(context, chat_id, boss_status, boss_info); return 
@@ -265,7 +265,7 @@ async def boss_action_callback(update: Update, context: ContextTypes.DEFAULT_TYP
          await _process_boss_defeat(context, chat_id, final_boss_status if final_boss_status else boss_status, boss_info)
          if chat_id in ACTIVE_BOSS_MESSAGES: del ACTIVE_BOSS_MESSAGES[chat_id]
 
-# --- (Rest of file: boss_jutsu_callback, _check_cooldown, etc. are all unchanged from 9:58 PM) ---
+# --- (boss_jutsu_callback is also fixed now) ---
 async def boss_jutsu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user = query.from_user; chat_id = query.message.chat_id; player_data = db.get_player(user.id)
@@ -323,108 +323,161 @@ async def boss_jutsu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
          if chat_id in ACTIVE_BOSS_MESSAGES: del ACTIVE_BOSS_MESSAGES[chat_id]
 
 def _check_cooldown(player_data, cooldown_duration_seconds):
-    cooldown_str = player_data.get('boss_attack_cooldown'); now = datetime.datetime.now()
+    # --- THIS IS THE FIX ---
+    # The DB gives a datetime object or None, not a string
+    cooldown_time = player_data.get('boss_attack_cooldown')
+    # --- END OF FIX ---
+    
+    now = datetime.datetime.now(datetime.timezone.utc) # Use timezone-aware now
+    
     if player_data.get('current_hp', 100) <= 1:
         lockout_duration = datetime.timedelta(hours=FAINT_LOCKOUT_HOURS)
-        if cooldown_str: 
-             cooldown_time = datetime.datetime.fromisoformat(cooldown_str)
+        if cooldown_time: 
+             # cooldown_time is the time the cooldown *ends*. The faint happened *before* this.
              faint_time = cooldown_time - datetime.timedelta(seconds=cooldown_duration_seconds) 
+             # Make sure faint_time is timezone-aware for comparison
+             if faint_time.tzinfo is None:
+                 faint_time = faint_time.replace(tzinfo=datetime.timezone.utc)
+
              if now < (faint_time + lockout_duration):
                   remaining_lockout = (faint_time + lockout_duration) - now
                   return False, remaining_lockout.total_seconds()
         else: return False, lockout_duration.total_seconds() 
-    if not cooldown_str: return True, 0 
-    cooldown_time = datetime.datetime.fromisoformat(cooldown_str)
+        
+    if not cooldown_time: return True, 0 
+    
+    # Make sure cooldown_time is timezone-aware
+    if cooldown_time.tzinfo is None:
+        cooldown_time = cooldown_time.replace(tzinfo=datetime.timezone.utc)
+    
     if now < cooldown_time: return False, (cooldown_time - now).total_seconds()
     else: return True, 0
 
 def _update_boss_and_player_damage(chat_id, user_id, username, damage_dealt, current_boss_status):
+    # --- THIS FUNCTION IS REWRITTEN FOR POSTGRESQL ---
     conn = db.get_db_connection(); 
     if conn is None: logger.error("DB connection failed..."); return False, current_boss_status['current_hp']
+    
     new_boss_hp = 0; boss_defeated = False
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT current_hp FROM world_boss_status WHERE chat_id = ? AND is_active = 1", (chat_id,))
-        current_hp_row = cursor.fetchone()
-        if not current_hp_row: 
-             logger.warning(f"Boss in chat {chat_id} already defeated, damage from {user_id} not counted.")
-             return True, 0 
-        current_hp = current_hp_row[0]
-        new_boss_hp = max(0, current_hp - damage_dealt)
-        cursor.execute("UPDATE world_boss_status SET current_hp = ? WHERE chat_id = ? AND is_active = 1", (new_boss_hp, chat_id))
-        cursor.execute(
-            """INSERT INTO world_boss_damage (chat_id, user_id, username, total_damage) VALUES (?, ?, ?, ?)
-               ON CONFLICT(chat_id, user_id) DO UPDATE SET total_damage = total_damage + excluded.total_damage, username = excluded.username;""",
-            (chat_id, user_id, username, damage_dealt)
-        )
+        with conn.cursor() as cursor:
+            # Lock the row for update to prevent race conditions
+            cursor.execute("SELECT current_hp FROM world_boss_status WHERE chat_id = %s AND is_active = 1 FOR UPDATE", (chat_id,))
+            current_hp_row = cursor.fetchone()
+            
+            if not current_hp_row: 
+                 logger.warning(f"Boss in chat {chat_id} already defeated, damage from {user_id} not counted.")
+                 conn.rollback() # Release the lock
+                 return True, 0 
+                 
+            current_hp = current_hp_row[0]
+            new_boss_hp = max(0, current_hp - damage_dealt)
+            
+            cursor.execute("UPDATE world_boss_status SET current_hp = %s WHERE chat_id = %s AND is_active = 1", (new_boss_hp, chat_id))
+            
+            cursor.execute(
+                """INSERT INTO world_boss_damage (chat_id, user_id, username, total_damage) VALUES (%s, %s, %s, %s)
+                   ON CONFLICT(chat_id, user_id) DO UPDATE SET total_damage = world_boss_damage.total_damage + %s, username = %s;""",
+                (chat_id, user_id, username, damage_dealt, damage_dealt, username)
+            )
+            
         conn.commit()
         if new_boss_hp == 0: boss_defeated = True
-    except sqlite3.Error as e: logger.error(f"Error updating boss damage: {e}"); conn.rollback(); return False, current_boss_status['current_hp']
-    finally: conn.close()
+    except (Exception, psycopg2.DatabaseError) as e: 
+        logger.error(f"Error updating boss damage: {e}"); 
+        conn.rollback(); 
+        return False, current_boss_status['current_hp']
+    finally: 
+        db.put_db_connection(conn)
     return boss_defeated, new_boss_hp
+    # --- END OF FIX ---
 
 def _get_top_damage_dealers(chat_id, limit=5):
+    # --- THIS FUNCTION IS REWRITTEN FOR POSTGRESQL ---
     conn = db.get_db_connection();
     if conn is None: return []
     try:
-        cursor = conn.cursor(); 
-        cursor.execute("SELECT username, total_damage FROM world_boss_damage WHERE chat_id = ? ORDER BY total_damage DESC LIMIT ?", (chat_id, limit))
-        rows = cursor.fetchall(); 
-        return [dict(row) for row in rows]
-    except sqlite3.Error as e: logger.error(f"Error fetching top damage: {e}"); return []
-    finally: conn.close()
+        with conn.cursor() as cursor: 
+            cursor.execute("SELECT username, total_damage FROM world_boss_damage WHERE chat_id = %s ORDER BY total_damage DESC LIMIT %s", (chat_id, limit))
+            rows = cursor.fetchall()
+            # Use dict_factory logic manually
+            fields = [column[0] for column in cursor.description]
+            return [dict(zip(fields, row)) for row in rows]
+    except (Exception, psycopg2.DatabaseError) as e: 
+        logger.error(f"Error fetching top damage: {e}"); 
+        return []
+    finally: 
+        db.put_db_connection(conn)
+    # --- END OF FIX ---
 
 async def _process_boss_defeat(context: ContextTypes.DEFAULT_TYPE, chat_id, boss_status, boss_info):
+    # --- THIS FUNCTION IS REWRITTEN FOR POSTGRESQL ---
     logger.info(f"Boss defeated in chat {chat_id}!")
     await context.bot.send_message(chat_id=chat_id, text=f"🏆👹 **The {boss_info['name']} has been defeated!** 👹🏆", parse_mode="HTML")
+    
     conn = db.get_db_connection(); 
     if conn is None: await context.bot.send_message(chat_id, "DB error during reward calculation."); return
+    
     try:
-         cursor = conn.cursor()
-         cursor.execute("SELECT user_id, username, total_damage FROM world_boss_damage WHERE chat_id = ? ORDER BY total_damage DESC", (chat_id,))
-         all_damage = [dict(row) for row in cursor.fetchall()]
-         if not all_damage:
-            await context.bot.send_message(chat_id, "No one damaged the boss? No rewards given.")
-            cursor.execute("UPDATE world_boss_status SET is_active = 0, current_hp = 0 WHERE chat_id = ?", (chat_id,))
-            cursor.execute("DELETE FROM world_boss_damage WHERE chat_id = ?", (chat_id,))
-            conn.commit(); return
-         total_ryo_pool = boss_status['ryo_pool']; rewards = {}; remaining_pool = total_ryo_pool
-         reward_text_parts = ["<b>--- 💰 Reward Distribution 💰 ---</b>"]
-         if len(all_damage) >= 1: amount = int(total_ryo_pool * 0.30); rewards[all_damage[0]['user_id']] = amount; remaining_pool -= amount; reward_text_parts.append(f"🥇 1st: {all_damage[0]['username']} (+{amount:,} Ryo)")
-         if len(all_damage) >= 2: amount = int(total_ryo_pool * 0.20); rewards[all_damage[1]['user_id']] = rewards.get(all_damage[1]['user_id'], 0) + amount; remaining_pool -= amount; reward_text_parts.append(f"🥈 2nd: {all_damage[1]['username']} (+{amount:,} Ryo)")
-         if len(all_damage) >= 3: amount = int(total_ryo_pool * 0.10); rewards[all_damage[2]['user_id']] = rewards.get(all_damage[2]['user_id'], 0) + amount; remaining_pool -= amount; reward_text_parts.append(f"🥉 3rd: {all_damage[2]['username']} (+{amount:,} Ryo)")
-         participants = all_damage[3:]
-         if participants and remaining_pool > 0:
-            share = int(remaining_pool / len(participants))
-            if share > 0:
-                 reward_text_parts.append(f"\n🤝 Participation Reward: +{share:,} Ryo each!")
-                 for participant in participants: rewards[participant['user_id']] = rewards.get(participant['user_id'], 0) + share
-         elif remaining_pool > 0 and len(all_damage) < 3: # <3 players
-            share = int(remaining_pool / len(all_damage))
-            reward_text_parts.append(f"\n🤝 Extra Reward: +{share:,} Ryo each!")
-            for player in all_damage: rewards[player['user_id']] = rewards.get(player['user_id'], 0) + share
-         player_ids_to_update = list(rewards.keys())
-         for user_id, ryo_gain in rewards.items():
-              cursor.execute("UPDATE players SET ryo = ryo + ?, boss_attack_cooldown = NULL WHERE user_id = ?", (ryo_gain, user_id))
-         cursor.execute("UPDATE world_boss_status SET is_active = 0, current_hp = 0 WHERE chat_id = ?", (chat_id,))
-         cursor.execute("DELETE FROM world_boss_damage WHERE chat_id = ?", (chat_id,))
+         with conn.cursor() as cursor:
+             cursor.execute("SELECT user_id, username, total_damage FROM world_boss_damage WHERE chat_id = %s ORDER BY total_damage DESC", (chat_id,))
+             
+             # Use dict_factory logic manually
+             fields = [column[0] for column in cursor.description]
+             all_damage = [dict(zip(fields, row)) for row in cursor.fetchall()]
+
+             if not all_damage:
+                await context.bot.send_message(chat_id, "No one damaged the boss? No rewards given.")
+                cursor.execute("UPDATE world_boss_status SET is_active = 0, current_hp = 0 WHERE chat_id = %s", (chat_id,))
+                cursor.execute("DELETE FROM world_boss_damage WHERE chat_id = %s", (chat_id,))
+                conn.commit(); return
+                
+             total_ryo_pool = boss_status['ryo_pool']; rewards = {}; remaining_pool = total_ryo_pool
+             reward_text_parts = ["<b>--- 💰 Reward Distribution 💰 ---</b>"]
+             
+             if len(all_damage) >= 1: amount = int(total_ryo_pool * 0.30); rewards[all_damage[0]['user_id']] = amount; remaining_pool -= amount; reward_text_parts.append(f"🥇 1st: {all_damage[0]['username']} (+{amount:,} Ryo)")
+             if len(all_damage) >= 2: amount = int(total_ryo_pool * 0.20); rewards[all_damage[1]['user_id']] = rewards.get(all_damage[1]['user_id'], 0) + amount; remaining_pool -= amount; reward_text_parts.append(f"🥈 2nd: {all_damage[1]['username']} (+{amount:,} Ryo)")
+             if len(all_damage) >= 3: amount = int(total_ryo_pool * 0.10); rewards[all_damage[2]['user_id']] = rewards.get(all_damage[2]['user_id'], 0) + amount; remaining_pool -= amount; reward_text_parts.append(f"🥉 3rd: {all_damage[2]['username']} (+{amount:,} Ryo)")
+             
+             participants = all_damage[3:]
+             if participants and remaining_pool > 0:
+                share = int(remaining_pool / len(participants))
+                if share > 0:
+                     reward_text_parts.append(f"\n🤝 Participation Reward: +{share:,} Ryo each!")
+                     for participant in participants: rewards[participant['user_id']] = rewards.get(participant['user_id'], 0) + share
+             elif remaining_pool > 0 and len(all_damage) < 3: # <3 players
+                share = int(remaining_pool / len(all_damage))
+                reward_text_parts.append(f"\n🤝 Extra Reward: +{share:,} Ryo each!")
+                for player in all_damage: rewards[player['user_id']] = rewards.get(player['user_id'], 0) + share
+             
+             player_ids_to_update = list(rewards.keys())
+             for user_id, ryo_gain in rewards.items():
+                  cursor.execute("UPDATE players SET ryo = ryo + %s, boss_attack_cooldown = NULL WHERE user_id = %s", (ryo_gain, user_id))
+             
+             cursor.execute("UPDATE world_boss_status SET is_active = 0, current_hp = 0 WHERE chat_id = %s", (chat_id,))
+             cursor.execute("DELETE FROM world_boss_damage WHERE chat_id = %s", (chat_id,))
+             
          conn.commit()
          for user_id in player_ids_to_update: db.cache.clear_player_cache(user_id)
          await context.bot.send_message(chat_id, "\n".join(reward_text_parts), parse_mode="HTML")
-    except sqlite3.Error as e: 
+         
+    except (Exception, psycopg2.DatabaseError) as e: 
         logger.error(f"Error processing boss defeat: {e}"); 
         await context.bot.send_message(chat_id, "A database error occurred during reward distribution."); 
         conn.rollback()
     finally: 
-        conn.close()
+        db.put_db_connection(conn)
+    # --- END OF FIX ---
 
 async def spawn_world_boss(context: ContextTypes.DEFAULT_TYPE):
     """Job function to check for and spawn world bosses."""
+    # --- THIS FUNCTION IS REWRITTEN FOR POSTGRESQL ---
     logger.info("BOSS JOB: Running spawn check...")
     enabled_chat_ids = db.get_all_boss_chats() 
     if not enabled_chat_ids: 
         logger.info("BOSS JOB: No enabled chats."); 
         return
+        
     for chat_id in enabled_chat_ids:
         boss_status = db.get_boss_status(chat_id)
         if boss_status and boss_status.get('is_active'):
@@ -433,23 +486,43 @@ async def spawn_world_boss(context: ContextTypes.DEFAULT_TYPE):
             if boss_info: 
                 await send_or_edit_boss_message(context, chat_id, boss_status, boss_info) 
             continue 
+            
         logger.info(f"BOSS JOB: Spawning new boss in chat {chat_id}...")
         boss_key = random.choice(list(gl.WORLD_BOSSES.keys()))
         boss_info = gl.WORLD_BOSSES[boss_key]
-        spawn_time_iso = datetime.datetime.now().isoformat()
+        spawn_time_utc = datetime.datetime.now(datetime.timezone.utc)
+        
         conn = db.get_db_connection()
+        if conn is None:
+            logger.error(f"BOSS JOB: DB connection failed, skipping spawn for chat {chat_id}")
+            continue
+            
         try:
-            cursor = conn.cursor()
-            cursor.execute("""INSERT OR REPLACE INTO world_boss_status (chat_id, is_active, boss_key, current_hp, max_hp, ryo_pool, spawn_time) VALUES (?, 1, ?, ?, ?, ?, ?)""", 
-                           (chat_id, boss_key, boss_info['hp'], boss_info['hp'], boss_info['ryo_pool'], spawn_time_iso))
-            cursor.execute("DELETE FROM world_boss_damage WHERE chat_id = ?", (chat_id,))
+            with conn.cursor() as cursor:
+                # Use INSERT ON CONFLICT DO UPDATE
+                cursor.execute("""
+                    INSERT INTO world_boss_status (chat_id, is_active, boss_key, current_hp, max_hp, ryo_pool, spawn_time) 
+                    VALUES (%s, 1, %s, %s, %s, %s, %s)
+                    ON CONFLICT (chat_id) DO UPDATE SET
+                        is_active = 1,
+                        boss_key = %s,
+                        current_hp = %s,
+                        max_hp = %s,
+                        ryo_pool = %s,
+                        spawn_time = %s
+                """, 
+                (chat_id, boss_key, boss_info['hp'], boss_info['hp'], boss_info['ryo_pool'], spawn_time_utc,
+                 boss_key, boss_info['hp'], boss_info['hp'], boss_info['ryo_pool'], spawn_time_utc))
+                
+                cursor.execute("DELETE FROM world_boss_damage WHERE chat_id = %s", (chat_id,))
             conn.commit()
             logger.info(f"BOSS JOB: Spawn successful for {boss_info['name']} in chat {chat_id}")
-        except sqlite3.Error as e: 
+        except (Exception, psycopg2.DatabaseError) as e: 
             logger.error(f"BOSS JOB: DB error spawning boss: {e}");
-            if conn: conn.rollback()
+            conn.rollback()
         finally:
-            if conn: conn.close()
+            db.put_db_connection(conn)
+            
         new_boss_status = db.get_boss_status(chat_id)
         if new_boss_status and new_boss_status['is_active']:
             await send_or_edit_boss_message(context, chat_id, new_boss_status, boss_info)
@@ -457,3 +530,4 @@ async def spawn_world_boss(context: ContextTypes.DEFAULT_TYPE):
         else: 
              logger.error(f"BOSS JOB: Failed get status after spawn {chat_id}")
     logger.info("BOSS JOB: Finished spawn check.")
+    # --- END OF FIX ---

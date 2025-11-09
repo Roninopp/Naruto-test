@@ -10,12 +10,13 @@ logger = logging.getLogger(__name__)
 
 # --- Command Handler ---
 async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # (No changes here, this function is fine)
     user = update.effective_user
     player = db.get_player(user.id)
     if not player:
-        await update.message.reply_text("You must /start your journey first.")
+        # --- TEXT UPDATE ---
+        await update.message.reply_text(f"{user.mention_html()}, you must /register first to access the shop!", parse_mode="HTML")
         return
+        # -------------------
     text = f"Welcome to the Shop, {player['username']}!\n"
     text += f"You have: {player['ryo']} Ryo 💰\n\n"
     text += "What would you like to buy?\n"
@@ -26,6 +27,9 @@ async def shop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             button_text = f"⚔️ {button_text} (+{item_info['stats']['strength']} Str)"
         elif item_info['type'] == 'armor':
             button_text = f"🛡️ {button_text} (+{item_info['stats']['stamina']} Stam)"
+        # --- NEW: Show desc for consumables like Soldier Pill ---
+        elif 'desc' in item_info:
+             pass # Keep button text simple, maybe add desc to help later if needed.
         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"shop_buy_{item_key}")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(text, reply_markup=reply_markup)
@@ -47,8 +51,10 @@ async def shop_buy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     player = db.get_player(user.id)
     
     if not player:
-        await query.answer("Player not found, please /start", show_alert=True)
+        # --- TEXT UPDATE ---
+        await query.answer("Please /register first!", show_alert=True)
         return
+        # -------------------
 
     if player['ryo'] < item_info['price']:
         await query.answer("You don't have enough Ryo!", show_alert=True)
@@ -59,23 +65,15 @@ async def shop_buy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     updates_to_save['ryo'] = player['ryo'] - item_info['price']
 
     if item_info['type'] in ['weapon', 'armor', 'accessory']:
-        # --- THIS IS THE FIX ---
-        # player.get('equipment') is already a dict
         equipment = player.get('equipment') or {}
-        # --- END OF FIX ---
-        
         equipment[item_info['type']] = item_key
-        updates_to_save['equipment'] = equipment # db.update_player handles the json conversion
+        updates_to_save['equipment'] = equipment
         await query.message.reply_text(f"You bought and equipped the {item_info['name']}!")
 
     else: # Consumable
-        # --- THIS IS THE FIX ---
-        # player.get('inventory') is already a list
         inventory = player.get('inventory') or []
-        # --- END OF FIX ---
-        
         inventory.append(item_key)
-        updates_to_save['inventory'] = inventory # db.update_player handles the json conversion
+        updates_to_save['inventory'] = inventory
         await query.message.reply_text(f"You bought a {item_info['name']}! It has been added to your inventory.")
 
     success = db.update_player(user.id, updates_to_save)

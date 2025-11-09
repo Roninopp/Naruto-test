@@ -2,6 +2,7 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
+import game_logic as gl 
 
 logger = logging.getLogger(__name__)
 
@@ -10,12 +11,11 @@ HELP_IMAGE_URL = "https://envs.sh/r6f.jpg"
 # --- Main Help Menu ---
 
 async def show_main_help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Shows the main help menu, deleting the old message if called from a button."""
+    """Shows the main help menu, ALWAYS sending a new photo message."""
     
     help_caption = "<b>--- ❓ Bot Help & Commands ❓ ---</b>\n\n"
     help_caption += "Select a topic below for detailed instructions:"
     
-    # --- FIX: Match the buttons in your screenshot ---
     keyboard = [
         [InlineKeyboardButton("👤 PROFILE INFO", callback_data="help_module_profile"), 
          InlineKeyboardButton("🗺️ Mission Guide", callback_data="help_module_missions")],
@@ -24,40 +24,31 @@ async def show_main_help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
         [InlineKeyboardButton("⚔️ BATTLE MODES", callback_data="help_module_battle"), 
          InlineKeyboardButton("🛒 Shop Guide", callback_data="help_module_shop")],
         [InlineKeyboardButton("👹 BOSS SPWAN", callback_data="help_module_boss"), 
-         InlineKeyboardButton("🔥 Akatsuki Ambush", callback_data="help_module_akatsuki")]
+         InlineKeyboardButton("🔥 Akatsuki Ambush", callback_data="help_module_akatsuki")],
+        [InlineKeyboardButton("🎲 Mini-Games (Steal, etc)", callback_data="help_module_minigames")]
     ]
-    # --- END FIX ---
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     query = update.callback_query
     chat_id = query.message.chat_id if query else update.message.chat_id
     
     if query: 
+        # If called from a button, try to delete the old message first
         try: await query.answer(); await query.message.delete() 
         except Exception as e: logger.warning(f"Could not delete old help message: {e}")
-        try:
-            await context.bot.send_photo(
-                chat_id=chat_id, photo=HELP_IMAGE_URL, caption=help_caption,
-                reply_markup=reply_markup, parse_mode="HTML"
-            )
-        except Exception as e:
-            logger.error(f"Failed to send help photo: {e}. Sending text only.")
-            await context.bot.send_message( 
-                chat_id=chat_id, text=help_caption, 
-                reply_markup=reply_markup, parse_mode="HTML"
-            )
-            
-    elif update.message: # Called via /help command
-        try:
-            await update.message.reply_photo( 
-                photo=HELP_IMAGE_URL, caption=help_caption,
-                reply_markup=reply_markup, parse_mode="HTML"
-            )
-        except Exception as e:
-            logger.error(f"Failed to send help photo via command: {e}. Sending text only.")
-            await update.message.reply_text( 
-                help_caption, reply_markup=reply_markup, parse_mode="HTML"
-            )
+        
+    # Always send a fresh photo message for the main menu
+    try:
+        await context.bot.send_photo(
+            chat_id=chat_id, photo=HELP_IMAGE_URL, caption=help_caption,
+            reply_markup=reply_markup, parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.error(f"Failed to send main help photo: {e}. Sending text only.")
+        await context.bot.send_message( 
+            chat_id=chat_id, text=help_caption, 
+            reply_markup=reply_markup, parse_mode="HTML"
+        )
 
 # --- Module-Specific Help Callbacks ---
 
@@ -69,7 +60,6 @@ async def show_module_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     module = query.data.split('_')[-1] 
     chat_id = query.message.chat_id
     
-    # --- FIX: Added complete help text ---
     help_text = ""
     
     if module == "profile":
@@ -77,6 +67,7 @@ async def show_module_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text += "Your profile is your ninja identity. It shows all your stats and progress.\n\n"
         help_text += "  •  `/profile`: Shows your stats, level, EXP, Ryo, and equipped items.\n"
         help_text += "  •  `/inventory`: Shows all consumable items you have bought, like Health Potions.\n"
+        help_text += "  •  `/wallet` (or `/bal`): A quick way to show your Rank, Level, and Ryo to the group.\n\n"
         help_text += "  •  **Level**: Gain EXP from missions and battles to level up.\n"
         help_text += "  •  **Stats**: Stats increase automatically on level up.\n"
         help_text += "    - **Str (Strength)**: Increases Taijutsu damage.\n"
@@ -96,7 +87,8 @@ async def show_module_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text += "Training permanently increases your base stats, but you can only do it a few times per day.\n\n"
         help_text += "  •  Use `/train` to see available training.\n"
         help_text += "  •  **Chakra Control**: Increases your Max Chakra.\n"
-        help_text += "  •  **Taijutsu**: Increases your Strength."
+        help_text += "  •  **Taijutsu**: Increases your Strength.\n\n"
+        help_text += "💡 **TIP:** Training also fully restores your HP and Chakra, so it's a great way to heal after a battle!"
 
     elif module == "jutsu":
         help_text += "<b>--- 🌀 Jutsu & Discovery 🌀 ---</b>\n\n"
@@ -104,7 +96,10 @@ async def show_module_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text += "  •  `/jutsus`: Lists all the jutsus you have learned.\n"
         help_text += "  •  `/combine [signs]`: Try to discover a new jutsu by combining hand signs.\n\n"
         help_text += "<b>Example:</b>\n`/combine tiger snake bird`\n\n"
-        help_text += "If the combination is correct, you will learn a new jutsu!"
+        help_text += "<b>--- Available Hand Signs ---</b>\n"
+        help_text += "You must combine these in the correct order to learn a new jutsu:\n\n"
+        signs_list = " • ".join([sign.title() for sign in gl.HAND_SIGNS])
+        help_text += f"<code>{signs_list}</code>"
 
     elif module == "battle":
         help_text += "<b>--- ⚔️ Battle Help ⚔️ ---</b>\n\n"
@@ -142,9 +137,38 @@ async def show_module_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text += "<b>Admin Command (Opt-Out):</b>\n"
         help_text += " • Group admins can use /auto_fight_off to stop these events."
     
+    elif module == "minigames":
+        help_text += "<b>--- 🎲 Mini-Games Help 🎲 ---</b>\n\n"
+        help_text += "Fun commands to interact with other players and earn rewards.\n\n"
+        
+        help_text += "<b>/wallet</b> (or /bal)\n"
+        help_text += "  •  Shows your Rank, Level, and Ryo. A quick way to show off!\n\n"
+
+        help_text += "<b>/scout</b>\n"
+        help_text += "  •  Scout the area for rewards. Can be used once per hour.\n"
+        help_text += "  •  Has a 25% chance to find Ryo and a 5% chance to find EXP.\n\n"
+        
+        help_text += "<b>/rob</b> (or /steal)\n"
+        help_text += "  •  Reply to a user with `/rob` to try and pickpocket them.\n"
+        help_text += "  •  **Success Chance:** Starts at 60%, increases with your **Speed** stat!\n"
+        help_text += "  •  **Cost:** 15 Chakra per attempt.\n\n"
+        
+        help_text += "<b>/assassinate</b>\n"
+        help_text += "  •  A high-risk, high-reward mission. Reply to a user with `/assassinate`.\n"
+        help_text += "  •  **Cost:** 200 Ryo just to attempt the mission.\n"
+        help_text += "  •  **Success:** Steal 10% of their Ryo (max 1,000), gain 100 EXP, and **HOSPITALIZE** them for 3 hours!\n"
+        help_text += "  •  **Fail:** You lose your 200 Ryo payment.\n"
+        help_text += "  •  Cooldown: 24 hours.\n\n"
+
+        help_text += "<b>/protect</b>\n"
+        help_text += "  •  Hire Anbu guards to block ALL rob and assassinate attempts.\n"
+        help_text += "  •  Cost: 500 Ryo for 1 day, or 1300 Ryo for 3 days (use `/protect 3d`).\n\n"
+        
+        help_text += "<b>/heal</b>\n"
+        help_text += "  •  Pay 300 Ryo to instantly leave the hospital if you were assassinated."
+    
     else:
         help_text = "Help information for this module is not available yet."
-    # --- END FIX ---
 
     keyboard = [[InlineKeyboardButton("⬅️ Back to Help Menu", callback_data="back_to_main_help")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -162,8 +186,5 @@ async def show_module_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- Back Button Callback (unchanged) ---
 async def back_to_main_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # (code is the same)
-    query = update.callback_query
-    try: await query.answer(); await query.message.delete()
-    except Exception as e: logger.warning(f"Could not delete text help message on back: {e}")
+    # Just call the main menu function, it handles deleting the old text message.
     await show_main_help_menu(update, context)
