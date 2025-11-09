@@ -4,33 +4,14 @@ import json
 import datetime 
 from datetime import timezone 
 
-# --- Constants from your prompts ---
-SHOP_INVENTORY = {
-    'kunai': {'name': 'Kunai', 'type': 'weapon', 'price': 250, 'stats': {'strength': 5, 'speed': 0, 'intelligence': 0, 'stamina': 0}},
-    'shuriken_pack': {'name': 'Shuriken Pack', 'type': 'weapon', 'price': 600, 'stats': {'strength': 8, 'speed': 2, 'intelligence': 0, 'stamina': 0}},
-    'flak_jacket': {'name': 'Flak Jacket', 'type': 'armor', 'price': 400, 'stats': {'strength': 0, 'speed': 0, 'intelligence': 0, 'stamina': 10}},
-    'health_potion': {'name': 'Health Potion', 'type': 'consumable', 'price': 100, 'stats': {'heal': 50}},
-    'soldier_pill': {'name': '💊 Soldier Pill', 'type': 'consumable', 'price': 50, 'desc': 'Restores energy for a quick duel.'},
-    'chakra_pill': {'name': '🔵 Chakra Pill', 'type': 'consumable', 'price': 100, 'desc': 'Restores 50 Chakra.'}
-}
+# --- Constants ---
+SHOP_INVENTORY = {'kunai': {'name': 'Kunai', 'type': 'weapon', 'price': 250, 'stats': {'strength': 5, 'speed': 0, 'intelligence': 0, 'stamina': 0}}, 'shuriken_pack': {'name': 'Shuriken Pack', 'type': 'weapon', 'price': 600, 'stats': {'strength': 8, 'speed': 2, 'intelligence': 0, 'stamina': 0}}, 'flak_jacket': {'name': 'Flak Jacket', 'type': 'armor', 'price': 400, 'stats': {'strength': 0, 'speed': 0, 'intelligence': 0, 'stamina': 10}}, 'health_potion': {'name': 'Health Potion', 'type': 'consumable', 'price': 100, 'stats': {'heal': 50}}, 'soldier_pill': {'name': '💊 Soldier Pill', 'type': 'consumable', 'price': 50, 'desc': 'Restores energy for a quick duel.'}, 'chakra_pill': {'name': '🔵 Chakra Pill', 'type': 'consumable', 'price': 100, 'desc': 'Restores 50 Chakra.'}}
 VILLAGES = {'konoha': 'Konoha (Fire 🔥)', 'suna': 'Suna (Wind 💨)', 'kiri': 'Kiri (Water 💧)', 'kumo': 'Kumo (Lightning ⚡)', 'iwa': 'Iwa (Earth ⛰️)'}
 VILLAGE_TO_ELEMENT = {'Konoha (Fire 🔥)': 'fire', 'Suna (Wind 💨)': 'wind', 'Kiri (Water 💧)': 'water', 'Kumo (Lightning ⚡)': 'lightning', 'Iwa (Earth ⛰️)': 'earth'}
-MISSIONS = {
-    'd_rank': {'name': 'D-Rank: Weeding Garden', 'exp': 50, 'ryo': 100, 'level_req': 1, 'animation': "🪴 Weeding garden...\n✅ Mission completed! +50 EXP"},
-    'c_rank': {'name': 'C-Rank: Escort Client', 'exp': 150, 'ryo': 300, 'level_req': 10, 'animation': "🛡️ Escorting client...\n⚔️ Bandits defeated!\n✅ Mission success! +150 EXP"},
-    'b_rank': {'name': 'B-Rank: Capture Target', 'exp': 400, 'ryo': 800, 'level_req': 20, 'animation': "🔍 Investigating...\n💥 Enemy ninja battle!\n🎯 Target captured!\n✅ Mission accomplished! +400 EXP"}
-}
-TRAINING_ANIMATIONS = {
-    'chakra_control': {'frames': ["🧘 Meditating...", "💫 Chakra flowing...", "✨ Control improving!"], 'stat': 'max_chakra', 'amount': 5, 'reward_text': "🎯 Max Chakra +5!"},
-    'taijutsu': {'frames': ["🥋 Practicing forms...", "💥 Sparring session!", "⚡ Speed increasing!"], 'stat': 'strength', 'amount': 3, 'reward_text': "🎯 Strength +3!"}
-}
+MISSIONS = {'d_rank': {'name': 'D-Rank: Weeding Garden', 'exp': 50, 'ryo': 100, 'level_req': 1, 'animation': "🪴 Weeding garden...\n✅ Mission completed! +50 EXP"}, 'c_rank': {'name': 'C-Rank: Escort Client', 'exp': 150, 'ryo': 300, 'level_req': 10, 'animation': "🛡️ Escorting client...\n⚔️ Bandits defeated!\n✅ Mission success! +150 EXP"}, 'b_rank': {'name': 'B-Rank: Capture Target', 'exp': 400, 'ryo': 800, 'level_req': 20, 'animation': "🔍 Investigating...\n💥 Enemy ninja battle!\n🎯 Target captured!\n✅ Mission accomplished! +400 EXP"}}
+TRAINING_ANIMATIONS = {'chakra_control': {'frames': ["🧘 Meditating...", "💫 Chakra flowing...", "✨ Control improving!"], 'stat': 'max_chakra', 'amount': 5, 'reward_text': "🎯 Max Chakra +5!"}, 'taijutsu': {'frames': ["🥋 Practicing forms...", "💥 Sparring session!", "⚡ Speed increasing!"], 'stat': 'strength', 'amount': 3, 'reward_text': "🎯 Strength +3!"}}
 HAND_SIGNS = ['tiger', 'snake', 'dog', 'bird', 'ram', 'boar', 'hare', 'rat', 'monkey', 'dragon']
-JUTSU_LIBRARY = {
-    'fireball': {'name': 'Fireball', 'signs': ['tiger', 'snake', 'bird'], 'power': 45, 'chakra_cost': 25, 'element': 'fire', 'level_required': 5},
-    'great_fireball': {'name': 'Great Fireball', 'signs': ['tiger', 'snake', 'ram', 'bird'], 'power': 70, 'chakra_cost': 40, 'element': 'fire', 'level_required': 12},
-    'water_dragon': {'name': 'Water Dragon', 'signs': ['tiger', 'dog', 'snake', 'bird'], 'power': 65, 'chakra_cost': 35, 'element': 'water', 'level_required': 15},
-    'fire_phoenix': {'name': 'Fire Phoenix', 'signs': ['tiger', 'snake', 'boar', 'bird', 'dragon'], 'power': 95, 'chakra_cost': 60, 'element': 'fire', 'level_required': 25, 'discovered': False}
-}
+JUTSU_LIBRARY = {'fireball': {'name': 'Fireball', 'signs': ['tiger', 'snake', 'bird'], 'power': 45, 'chakra_cost': 25, 'element': 'fire', 'level_required': 5}, 'great_fireball': {'name': 'Great Fireball', 'signs': ['tiger', 'snake', 'ram', 'bird'], 'power': 70, 'chakra_cost': 40, 'element': 'fire', 'level_required': 12}, 'water_dragon': {'name': 'Water Dragon', 'signs': ['tiger', 'dog', 'snake', 'bird'], 'power': 65, 'chakra_cost': 35, 'element': 'water', 'level_required': 15}, 'fire_phoenix': {'name': 'Fire Phoenix', 'signs': ['tiger', 'snake', 'boar', 'bird', 'dragon'], 'power': 95, 'chakra_cost': 60, 'element': 'fire', 'level_required': 25, 'discovered': False}}
 ELEMENT_MATRIX = {'fire': {'wind': 1.5, 'earth': 0.75, 'water': 0.5, 'lightning': 1.0, 'fire': 1.0, 'none': 1.0}, 'water': {'fire': 1.5, 'earth': 1.0, 'lightning': 0.5, 'wind': 0.75, 'water': 1.0, 'none': 1.0}, 'wind': {'lightning': 1.5, 'earth': 0.5, 'fire': 0.75, 'water': 1.0, 'wind': 1.0, 'none': 1.0}, 'earth': {'lightning': 1.5, 'water': 0.75, 'fire': 1.0, 'wind': 1.5, 'earth': 1.0, 'none': 1.0}, 'lightning': {'water': 1.5, 'earth': 0.5, 'wind': 0.75, 'fire': 1.0, 'lightning': 1.0, 'none': 1.0}, 'none': {'fire': 1.0, 'water': 1.0, 'wind': 1.0, 'earth': 1.0, 'lightning': 1.0, 'none': 1.0}}
 ELEMENT_ANIMATIONS = {'fire': ["🔥 FIRE STYLE! 🔥", "🔥🔥 Igniting! 🔥🔥", "🔥🔥🔥 INFERNO! 🔥🔥🔥", "💥 BURNING DAMAGE! ❤️‍🔥"], 'water': ["💧 WATER STYLE! 💧", "🌊 Waves forming! 🌊", "🌊💦 TSUNAMI! 💦🌊", "💦 SOAKING HIT! 🏊"], 'lightning': ["⚡ LIGHTNING STYLE! ⚡", "⚡⚡ Charging! ⚡⚡", "⚡⚡⚡ THUNDER STRIKE! ⚡⚡⚡", "💢 SHOCK DAMAGE! 🌀"], 'wind': ["💨 WIND STYLE! 💨", "💨💨 Gusts building! 💨💨", "💨💨💨 TYPHOON! 💨💨💨", "🌪 SLASHING WIND! 🎯"], 'earth': ["⛰ EARTH STYLE! ⛰", "⛰⛰ Ground shaking! ⛰⛰", "⛰⛰⛰ QUAKE! ⛰⛰⛰", "💢 CRUSHING DAMAGE! 🪨"]}
 CRITICAL_HIT_FRAMES = ["✨ ✨ ✨", "💥 CRITICAL HIT! 💥", "⭐ DEVASTATING BLOW! ⭐", "🎯 WEAK POINT HIT!", "✨ ✨ ✨"]
@@ -128,7 +109,7 @@ AKATSUKI_ENEMIES = {
     'sasuke_clone': {'name': 'Sasuke (Clone)', 'desc': "A fast and skilled clone, it strikes with deadly precision!", 'level': 10, 'strength': 20, 'speed': 25, 'stamina': 10, 'intelligence': 15, 'max_hp': 200, 'image': 'https://envs.sh/NMW.jpg'}
 }
 
-# --- NEW: Improved Hospital Check ---
+# --- IMPROVED: Hospital Check Helper ---
 def get_hospital_status(player_data):
     """Checks if a player is hospitalized. Returns (is_hospitalized, remaining_seconds)."""
     hospital_time = player_data.get('hospitalized_until')
@@ -140,7 +121,15 @@ def get_hospital_status(player_data):
     # Get current time in UTC
     now = datetime.datetime.now(timezone.utc)
     
-    # Ensure the hospital time is also timezone-aware (UTC)
+    # Ensure hospital_time is a datetime object, not a string
+    if isinstance(hospital_time, str):
+        try:
+            hospital_time = datetime.datetime.fromisoformat(hospital_time)
+        except ValueError:
+             # If it's bad data, assume they are free
+             return False, 0
+
+    # Ensure it is timezone-aware (UTC)
     if hospital_time.tzinfo is None:
         hospital_time = hospital_time.replace(tzinfo=timezone.utc)
     
