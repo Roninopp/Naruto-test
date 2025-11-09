@@ -44,7 +44,7 @@ import chat_rewards
 import daily 
 
 # --- Constants ---
-BOT_TOKEN = "7307409890:AAH9HssgtqWmiajqaSHVbA7Aehx_qBajwJI" # Your Test Bot Token
+BOT_TOKEN = "7307409890:AAERVuaVSOOOLGv_anuULfQR_MRPRSvLt_U" # Your Test Bot Token
 START_IMAGE_URL = "https://envs.sh/r6z.jpg" 
 
 # --- Welcome Message Function ---
