@@ -16,13 +16,15 @@ STEAL_CHAKRA_COST = 15
 STEAL_BASE_SUCCESS_CHANCE = 0.60; STEAL_BASE_FAIL_CHANCE = 0.10; STEAL_BASE_AMOUNT = 30; STEAL_MAX_AMOUNT = 100; STEAL_FAIL_PENALTY = 20
 SCOUT_COOLDOWN_MINUTES = 60; SCOUT_EXP_CHANCE = 0.05; SCOUT_RYO_CHANCE = 0.25; SCOUT_EXP_REWARD = 50; SCOUT_RYO_REWARD = 25
 GIFT_TAX_PERCENT = 0.05; PROTECT_1D_COST = 500; PROTECT_3D_COST = 1300
-HOSPITAL_DURATION_HOURS = 3; HEAL_COST = 300
 
 # --- KILL CONSTANTS ---
-KILL_CHAKRA_COST = 50
-KILL_RYO_COST = 0
-KILL_RYO_REWARD = 100
-KILL_EXP_REWARD = 140
+KILL_CHAKRA_COST = 50   # High energy cost
+KILL_RYO_REWARD = 140   # Fixed reward as you asked
+KILL_EXP_REWARD = 100   # Fixed EXP as you asked
+HOSPITAL_DURATION_HOURS = 24 # 24 Hours dead (as you asked before, or 3? Let's stick to 24 for now if you want it hardcore)
+# Actually, you said "again avilve after 24 hours" in a previous prompt.
+# Let's set it to 24.
+HEAL_COST = 300
 # ----------------------
 
 async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text, parse_mode=None):
@@ -56,9 +58,7 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if protect_time.tzinfo is None: protect_time = protect_time.replace(tzinfo=datetime.timezone.utc)
         if now < protect_time: await safe_reply(update, context, f"🛡️ **FAILED!** {victim_user.mention_html()} is Protected By Black Anbu Guards!", parse_mode="HTML"); return
 
-    if stealer['current_chakra'] < STEAL_CHAKRA_COST:
-         await safe_reply(update, context, f"🥵 You are too tired! You need **{STEAL_CHAKRA_COST} Chakra** to rob someone.\nUse `/train` to recover!", parse_mode="HTML")
-         return
+    if stealer['current_chakra'] < STEAL_CHAKRA_COST: await safe_reply(update, context, f"🥵 You are too tired! You need **{STEAL_CHAKRA_COST} Chakra**.", parse_mode="HTML"); return
          
     stealer_updates = {'current_chakra': stealer['current_chakra'] - STEAL_CHAKRA_COST}
     stealer_stats = gl.get_total_stats(stealer)
@@ -106,7 +106,8 @@ async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.update_player(user.id, player_updates)
         await safe_reply(update, context, "You scouted but found nothing.")
 
-async def assassinate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Instant kill command. 100% success if not protected."""
     user = update.effective_user; chat = update.effective_chat
     if chat.type == ChatType.PRIVATE or not update.message.reply_to_message: await safe_reply(update, context, "Reply to target in a group."); return
     victim_user = update.message.reply_to_message.from_user
@@ -115,19 +116,34 @@ async def assassinate_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not attacker: await safe_reply(update, context, f"{user.mention_html()}, please /register first!", parse_mode="HTML"); return
     if not victim: await safe_reply(update, context, f"{victim_user.mention_html()} is not a registered ninja.", parse_mode="HTML"); return
     
+    # --- Check if Attacker is Hospitalized ---
     hosp, rem = gl.get_hospital_status(attacker)
     if hosp: await safe_reply(update, context, f"🏥 You are in the hospital! Wait {rem/3600:.1f}h or use /heal."); return
 
+    # --- Check if Victim is ALREADY Dead ---
+    victim_is_hosp, _ = gl.get_hospital_status(victim)
+    if victim_is_hosp:
+        killer_id = victim.get('hospitalized_by')
+        if killer_id:
+             killer = db.get_player(killer_id)
+             killer_name = killer['username'] if killer else "Unknown Ninja"
+             await safe_reply(update, context, f"⚠️ {victim_user.mention_html()} was already killed by **{killer_name}**!", parse_mode="HTML")
+        else:
+             await safe_reply(update, context, f"🏥 {victim_user.mention_html()} is already in the hospital.", parse_mode="HTML")
+        return
+
     now = datetime.datetime.now(datetime.timezone.utc)
+    # --- Check for Anbu Protection ---
     if victim.get('protection_until'):
         pt = victim['protection_until']
         if pt.tzinfo is None: pt = pt.replace(tzinfo=datetime.timezone.utc)
         if now < pt: await safe_reply(update, context, f"🛡️ **FAILED!** {victim_user.mention_html()} is Protected By Black Anbu Guards!", parse_mode="HTML"); return
 
+    # --- Check Chakra ---
     if attacker['current_chakra'] < KILL_CHAKRA_COST: await safe_reply(update, context, f"🥵 You need **{KILL_CHAKRA_COST} Chakra** to kill! Use /train.", parse_mode="HTML"); return
     
-    # --- GUARANTEED HIT (No RNG) ---
-    steal_amount = min(victim['ryo'], KILL_RYO_REWARD)
+    # --- 100% SUCCESS LOGIC ---
+    hospital_until = now + datetime.timedelta(hours=24) # 24 Hours as requested
     
     attacker_updates = {
         'current_chakra': attacker['current_chakra'] - KILL_CHAKRA_COST,
@@ -138,10 +154,14 @@ async def assassinate_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     }
     
     db.update_player(user.id, attacker_updates)
-    # Only steal Ryo from victim, DO NOT hospitalize them
-    db.update_player(victim_user.id, {'ryo': victim['ryo'] - steal_amount})
+    # Victim gets hospitalized.
+    db.update_player(victim_user.id, {'hospitalized_until': hospital_until.isoformat(), 'hospitalized_by': user.id})
     
-    await safe_reply(update, context, f"🎯 **TARGET ELIMINATED!**\n{user.mention_html()} killed {victim_user.mention_html()}!\nBounty: **+{KILL_RYO_REWARD} Ryo**, **+{KILL_EXP_REWARD} EXP**.", parse_mode="HTML")
+    await safe_reply(update, context, f"🎯 **TARGET ELIMINATED!**\n{user.mention_html()} killed {victim_user.mention_html()}!\nBounty: **+{KILL_RYO_REWARD} Ryo**, **+{KILL_EXP_REWARD} EXP**.\n{victim_user.mention_html()} is 🏥 **HOSPITALIZED** for 24 hours!", parse_mode="HTML")
+
+# Alias for /assassinate if you still want it
+async def assassinate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await kill_command(update, context)
 
 async def gift_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
