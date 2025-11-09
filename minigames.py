@@ -17,12 +17,14 @@ STEAL_BASE_SUCCESS_CHANCE = 0.60; STEAL_BASE_FAIL_CHANCE = 0.10; STEAL_BASE_AMOU
 SCOUT_COOLDOWN_MINUTES = 60; SCOUT_EXP_CHANCE = 0.05; SCOUT_RYO_CHANCE = 0.25; SCOUT_EXP_REWARD = 50; SCOUT_RYO_REWARD = 25
 GIFT_TAX_PERCENT = 0.05; PROTECT_1D_COST = 500; PROTECT_3D_COST = 1300
 
-# --- KILL CONSTANTS (100% Chance, No Hospital) ---
-KILL_CHAKRA_COST = 50
-KILL_RYO_REWARD = 140   # Updated reward
-KILL_EXP_REWARD = 100   # Updated reward
-HOSPITAL_DURATION_HOURS = 3; HEAL_COST = 300
-# -----------------------------------------------
+# --- KILL CONSTANTS ---
+KILL_CHAKRA_COST = 30
+KILL_RYO_REWARD = 100
+KILL_EXP_REWARD = 140
+KILL_BASE_SUCCESS = 0.50 
+HOSPITAL_DURATION_HOURS = 24 # <-- CHANGED TO 24 HOURS
+HEAL_COST = 300
+# ----------------------
 
 async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text, parse_mode=None):
     try: await update.message.reply_text(text, parse_mode=parse_mode)
@@ -31,9 +33,23 @@ async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text, p
         except Exception as e: logger.error(f"Failed to send safe_reply: {e}")
 
 async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Shows the player's current Ryo, Rank, Level, and Status."""
     user = update.effective_user; player = db.get_player(user.id)
     if not player: await safe_reply(update, context, f"Hey {user.mention_html()}! Please /start me in a private chat.", parse_mode="HTML"); return
-    wallet_text = (f"<b>--- 🥷 {user.mention_html()}'s Wallet 🥷 ---</b>\n\n" f"<b>Rank:</b> {player['rank']}\n" f"<b>Level:</b> {player['level']}\n" f"<b>Ryo:</b> {player['ryo']:,} 💰\n" f"<b>Kills:</b> {player.get('kills', 0)} ☠️")
+    
+    # --- NEW: Status Check ---
+    is_hosp, _ = gl.get_hospital_status(player)
+    status_text = "🏥 Hospitalized" if is_hosp else "❤️ Alive"
+    # -------------------------
+
+    wallet_text = (
+        f"<b>--- 🥷 {user.mention_html()}'s Wallet 🥷 ---</b>\n\n"
+        f"<b>Rank:</b> {player['rank']}\n"
+        f"<b>Level:</b> {player['level']}\n"
+        f"<b>Ryo:</b> {player['ryo']:,} 💰\n"
+        f"<b>Kills:</b> {player.get('kills', 0)} ☠️\n"
+        f"<b>Status:</b> {status_text}" # <-- Added Status
+    )
     await safe_reply(update, context, wallet_text, parse_mode="HTML")
 
 async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -53,7 +69,9 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if victim.get('protection_until'):
         protect_time = victim['protection_until']
         if protect_time.tzinfo is None: protect_time = protect_time.replace(tzinfo=datetime.timezone.utc)
-        if now < protect_time: await safe_reply(update, context, f"🛡️ **FAILED!** {victim_user.mention_html()} is Protected By Black Anbu Guards!", parse_mode="HTML"); return
+        if now < protect_time: 
+            await safe_reply(update, context, f"🛡️ **ATTEMPT FAILED!**\n{victim_user.mention_html()} is Protected By Black Anbu Guards!", parse_mode="HTML")
+            return
 
     if stealer['current_chakra'] < STEAL_CHAKRA_COST: await safe_reply(update, context, f"🥵 You are too tired! You need **{STEAL_CHAKRA_COST} Chakra**.", parse_mode="HTML"); return
          
@@ -67,7 +85,7 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if roll < success_chance:
         final_steal = min(victim['ryo'], steal_amount)
         if final_steal <= 0: db.update_player(user.id, stealer_updates); await safe_reply(update, context, f"You pickpocketed {victim['username']}, but they are broke!"); return
-        db.update_player(user.id, {**stealer_updates, 'ryo': stealer['ryo'] + final_steal}); db.update_player(victim_user.id, {'ryo': victim['ryo'] - final_steal})
+        db.update_player(user.id, {**stealer_updates, 'ryo': stealer['ryo'] + final_steal}); db.update_player(victim.id, {'ryo': victim['ryo'] - final_steal})
         await safe_reply(update, context, f"✅ **Success!** Stole **{final_steal} Ryo** from {victim['username']}!", parse_mode="HTML")
     elif roll < (success_chance + fail_chance):
         lose = min(stealer['ryo'], STEAL_FAIL_PENALTY)
@@ -98,8 +116,7 @@ async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.update_player(user.id, player_updates)
         await safe_reply(update, context, "You scouted but found nothing.")
 
-async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Instant kill command. 100% success, rewards only, no hospital."""
+async def assassinate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user; chat = update.effective_chat
     if chat.type == ChatType.PRIVATE or not update.message.reply_to_message: await safe_reply(update, context, "Reply to target in a group."); return
     victim_user = update.message.reply_to_message.from_user
@@ -108,35 +125,49 @@ async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not attacker: await safe_reply(update, context, f"{user.mention_html()}, please /register first!", parse_mode="HTML"); return
     if not victim: await safe_reply(update, context, f"{victim_user.mention_html()} is not a registered ninja.", parse_mode="HTML"); return
     
-    hosp, rem = gl.get_hospital_status(attacker)
-    if hosp: await safe_reply(update, context, f"🏥 You are in the hospital! Wait {rem/3600:.1f}h or use /heal."); return
+    is_hospitalized, remaining = gl.get_hospital_status(attacker)
+    if is_hospitalized: await safe_reply(update, context, f"🏥 You are in the hospital! Wait {remaining/3600:.1f}h or use /heal."); return
+
+    # --- ALREADY DEAD CHECK ---
+    victim_is_hosp, _ = gl.get_hospital_status(victim)
+    if victim_is_hosp:
+        killer_id = victim.get('hospitalized_by')
+        killer_name = "someone"
+        if killer_id:
+             killer = db.get_player(killer_id)
+             if killer: killer_name = killer['username']
+        await safe_reply(update, context, f"⚠️ This ninja was already killed by **{killer_name}**!", parse_mode="HTML")
+        return
+    # --------------------------
 
     now = datetime.datetime.now(datetime.timezone.utc)
     if victim.get('protection_until'):
         pt = victim['protection_until']
         if pt.tzinfo is None: pt = pt.replace(tzinfo=datetime.timezone.utc)
-        if now < pt: await safe_reply(update, context, f"🛡️ **FAILED!** {victim_user.mention_html()} is Protected By Black Anbu Guards!", parse_mode="HTML"); return
+        if now < pt: await safe_reply(update, context, f"🛡️ **FAILED!**\n{victim_user.mention_html()} is Protected By Black Anbu Guards!", parse_mode="HTML"); return
 
-    if attacker['current_chakra'] < KILL_CHAKRA_COST: await safe_reply(update, context, f"🥵 You need **{KILL_CHAKRA_COST} Chakra** to kill! Use /train.", parse_mode="HTML"); return
+    if attacker['current_chakra'] < KILL_CHAKRA_COST: await safe_reply(update, context, f"Need {KILL_CHAKRA_COST} Chakra! Use /train."); return
     
-    # --- 100% SUCCESS, NO HOSPITAL ---
-    attacker_updates = {
-        'current_chakra': attacker['current_chakra'] - KILL_CHAKRA_COST,
-        'ryo': attacker['ryo'] + KILL_RYO_REWARD,
-        'exp': attacker['exp'] + KILL_EXP_REWARD,
-        'total_exp': attacker['total_exp'] + KILL_EXP_REWARD,
-        'kills': attacker.get('kills', 0) + 1
-    }
+    attacker_updates = {'current_chakra': attacker['current_chakra'] - KILL_CHAKRA_COST}
     
-    db.update_player(user.id, attacker_updates)
-    # Victim is NOT updated at all.
-    
-    await safe_reply(update, context, 
-        f"🎯 **TARGET ELIMINATED!**\n"
-        f"{user.mention_html()} killed {victim_user.mention_html()}!\n"
-        f"Bounty: **+{KILL_RYO_REWARD} Ryo**, **+{KILL_EXP_REWARD} EXP**.", 
-        parse_mode="HTML"
-    )
+    if random.random() < KILL_BASE_SUCCESS:
+        # --- SUCCESS ---
+        hospital_until = now + datetime.timedelta(hours=HOSPITAL_DURATION_HOURS)
+        attacker_updates.update({
+            'ryo': attacker['ryo'] + KILL_RYO_REWARD,
+            'exp': attacker['exp'] + KILL_EXP_REWARD,
+            'total_exp': attacker['total_exp'] + KILL_EXP_REWARD,
+            'kills': attacker.get('kills', 0) + 1
+        })
+        db.update_player(user.id, attacker_updates)
+        # Important: Set 'hospitalized_by' so we know who did it
+        db.update_player(victim.id, {'hospitalized_until': hospital_until.isoformat(), 'hospitalized_by': user.id})
+        
+        await safe_reply(update, context, f"🎯 **TARGET ELIMINATED!**\nStole **{KILL_RYO_REWARD} Ryo**, gained **{KILL_EXP_REWARD} EXP**.\n{victim_user.mention_html()} is 🏥 **HOSPITALIZED** for {HOSPITAL_DURATION_HOURS} hours!", parse_mode="HTML")
+    else:
+        # --- FAIL ---
+        db.update_player(user.id, attacker_updates)
+        await safe_reply(update, context, f"❌ **MISSION FAILED!**\n{victim_user.mention_html()} spotted you and you had to flee!", parse_mode="HTML")
 
 async def gift_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -175,13 +206,9 @@ async def heal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not target_user.is_bot: target_id = target_user.id; target_name = f"{target_user.mention_html()} is"
     target = db.get_player(target_id)
     if not target: await safe_reply(update, context, "Target not registered."); return
-    hosp, _ = gl.get_hospital_status(target)
-    if not hosp: await safe_reply(update, context, f"{target_name} not in the hospital."); return
+    is_hospitalized, _ = gl.get_hospital_status(target)
+    if not is_hospitalized: await safe_reply(update, context, f"{target_name} not in the hospital."); return
     if payer['ryo'] < HEAL_COST: await safe_reply(update, context, f"Need **{HEAL_COST} Ryo** for medical ninjutsu.", parse_mode="HTML"); return
     db.update_player(user.id, {'ryo': payer['ryo'] - HEAL_COST})
     db.update_player(target_id, {'hospitalized_until': None, 'hospitalized_by': None})
     await safe_reply(update, context, f"💚 **MEDICAL NINJUTSU!** 💚\n{target_name} fully healed and released from the hospital!", parse_mode="HTML")
-
-# Alias for /assassinate if you still want it
-async def assassinate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await kill_command(update, context)
