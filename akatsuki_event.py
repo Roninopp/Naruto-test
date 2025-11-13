@@ -125,10 +125,8 @@ async def spawn_akatsuki_event(context: ContextTypes.DEFAULT_TYPE):
                 if (now - created_at) >= timeout:
                     logger.warning(f"AKATSUKI JOB: Chat {chat_id} timed out. Clearing.")
                     db.clear_akatsuki_fight(chat_id)
-                    try:
-                        await context.bot.send_message(chat_id, "The Akatsuki member got bored and left...")
-                    except:
-                        pass
+                    try: await context.bot.send_message(chat_id, "The Akatsuki member got bored and left...")
+                    except: pass
                     battle_state = None
                 else: continue
             except Exception as e:
@@ -205,7 +203,7 @@ async def akatsuki_action_callback(update: Update, context: ContextTypes.DEFAULT
         return
 
     if str(battle_state['turn_player_id']) != str(user.id):
-        await query.answer("Not your turn!", show_alert=True)
+        await query.answer("It's not your turn!", show_alert=True)
         return
         
     player_data = db.get_player(user.id)
@@ -240,7 +238,10 @@ async def akatsuki_action_callback(update: Update, context: ContextTypes.DEFAULT
         if player_data['level'] < 5:
             await query.answer("Need Level 5+ for Jutsus!", show_alert=True)
             return
-        known = json.loads(player_data['known_jutsus']) if player_data.get('known_jutsus') else []
+        # --- FIX: No json.loads() needed here! ---
+        known = player_data.get('known_jutsus') or []
+        if isinstance(known, str): known = json.loads(known) # Safety check just in case
+        # -----------------------------------------
         if not known:
             await query.answer("You don't know any Jutsus! Use /combine.", show_alert=True)
             return
@@ -391,13 +392,16 @@ async def end_akatsuki_fight(context, chat_id, message_id, battle_state, enemy_i
     db.clear_akatsuki_fight(chat_id)
 
 def _check_akatsuki_cooldown(player_data, action, cooldown_seconds):
-    cd_str = player_data.get('akatsuki_cooldown')
+    # --- FIX: No json.loads() needed here! ---
+    cooldowns = player_data.get('akatsuki_cooldown') or {}
+    if isinstance(cooldowns, str): cooldowns = json.loads(cooldowns) # Safety check
+    # -----------------------------------------
+    
     now = datetime.datetime.now()
     if player_data.get('current_hp', 100) <= 1: return False, 3600 
-    if not cd_str: return True, 0
-    try: cds = json.loads(cd_str)
-    except: cds = {}
-    act_cd = cds.get(action)
+    if not cooldowns: return True, 0
+
+    act_cd = cooldowns.get(action)
     if not act_cd: return True, 0
     cd_time = datetime.datetime.fromisoformat(act_cd)
     if now < cd_time: return False, (cd_time - now).total_seconds()

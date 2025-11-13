@@ -44,7 +44,7 @@ import chat_rewards
 import daily 
 
 # --- Constants ---
-BOT_TOKEN = "7307409890:AAERVuaVSOOOLGv_anuULfQR_MRPRSvLt_U" # Your Test Bot Token
+BOT_TOKEN = "7307409890:AAHrBGraKUVlCPaMQdVKNkS45Qg8x5vgRM8" # Your Test Bot Token
 START_IMAGE_URL = "https://envs.sh/r6z.jpg" 
 
 # --- Welcome Message Function ---
@@ -56,7 +56,6 @@ async def on_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE
             kb = [[InlineKeyboardButton("SUMMON ME", url="https://t.me/Naruto_gameXBot?startgroup=true")], [InlineKeyboardButton("UPDATES", url="https://t.me/SN_Telegram_bots_Stores")]]
             await context.bot.send_photo(update.message.chat.id, photo=START_IMAGE_URL, caption="🔥 **A new Shinobi has entered!**\nType `/register` to begin!", reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
-# --- NEW: /register Command ---
 async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Allows users to register directly in the group."""
     user = update.effective_user
@@ -115,12 +114,53 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(welcome_text, parse_mode="HTML", reply_markup=reply_markup)
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user; player = db.get_player(user.id)
-    if not player: await update.message.reply_text(f"{user.mention_html()}, please /register first to start your journey!", parse_mode="HTML"); return
-    stats = gl.get_total_stats(player); eq = player.get('equipment') or {}
-    eq_text = "\n".join([f"<b>{s.title()}:</b> {gl.SHOP_INVENTORY[eq[s]]['name'] if eq.get(s) else 'None'}" for s in ['weapon','armor','accessory']])
-    txt = (f"--- 👤 NINJA PROFILE 👤 ---\n<b>Name:</b> {player['username']}\n<b>Village:</b> {player['village']}\n<b>Rank:</b> {player['rank']}\n<b>Level:</b> {player['level']}\n<b>EXP:</b> {player['exp']} / {gl.get_exp_for_next_level(player['level'])}\n<b>Ryo:</b> {player['ryo']} 💰\n\n<b>HP:</b> {gl.health_bar(player['current_hp'], stats['max_hp'])}\n<b>Chakra:</b> {gl.chakra_bar(player['current_chakra'], stats['max_chakra'])}\n\n--- STATS ---\n<b>Str:</b> {stats['strength']}\n<b>Spd:</b> {stats['speed']}\n<b>Int:</b> {stats['intelligence']}\n<b>Stam:</b> {stats['stamina']}\n\n--- EQUIPMENT ---\n{eq_text}\n<b>Wins:</b> {player['wins']} | <b>Losses:</b> {player['losses']}\n<b>Kills:</b> {player.get('kills', 0)} ☠️")
-    await update.message.reply_text(txt, parse_mode="HTML")
+    """Handles the /profile command."""
+    user = update.effective_user
+    player = db.get_player(user.id)
+    if not player:
+        await update.message.reply_text(f"{user.mention_html()}, please /register first to start your journey!", parse_mode="HTML")
+        return
+        
+    # --- FIX: Safely handle equipment data format ---
+    raw_eq = player.get('equipment')
+    if isinstance(raw_eq, str):
+        try: player_equipment = json.loads(raw_eq)
+        except: player_equipment = {}
+    elif isinstance(raw_eq, dict):
+        player_equipment = raw_eq
+    else:
+        player_equipment = {}
+    # --- END FIX ---
+    
+    total_stats = gl.get_total_stats(player) 
+    equipment_text = "\n".join([f"<b>{s.title()}:</b> {gl.SHOP_INVENTORY[player_equipment[s]]['name'] if player_equipment.get(s) else 'None'}" for s in ['weapon','armor','accessory']])
+
+    total_max_hp = total_stats.get('max_hp', gl.BASE_HP)
+    total_max_chakra = total_stats.get('max_chakra', gl.BASE_CHAKRA)
+    hp_bar = gl.health_bar(player.get('current_hp', total_max_hp), total_max_hp)
+    chakra_bar = gl.chakra_bar(player.get('current_chakra', total_max_chakra), total_max_chakra)
+    exp_needed = gl.get_exp_for_next_level(player.get('level', 1))
+    
+    profile_text = (
+        f"--- 👤 NINJA PROFILE 👤 ---\n"
+        f"<b>Name:</b> {player.get('username', 'N/A')}\n"
+        f"<b>Village:</b> {player.get('village', 'N/A')}\n"
+        f"<b>Rank:</b> {player.get('rank', 'N/A')}\n"
+        f"<b>Level:</b> {player.get('level', 1)}\n"
+        f"<b>EXP:</b> {player.get('exp', 0)} / {exp_needed}\n"
+        f"<b>Ryo:</b> {player.get('ryo', 0)} 💰\n\n"
+        f"<b>HP:</b>     {hp_bar}\n"
+        f"<b>Chakra:</b> {chakra_bar}\n\n"
+        f"--- TOTAL STATS (with items) ---\n"
+        f"<b>Str:</b> {total_stats.get('strength', 0)} (Base: {player.get('strength', 0)})\n"
+        f"<b>Spd:</b> {total_stats.get('speed', 0)} (Base: {player.get('speed', 0)})\n"
+        f"<b>Int:</b> {total_stats.get('intelligence', 0)} (Base: {player.get('intelligence', 0)})\n"
+        f"<b>Stam:</b> {total_stats.get('stamina', 0)} (Base: {player.get('stamina', 0)})\n\n"
+        f"--- EQUIPMENT ---\n{equipment_text}\n"
+        f"<b>Wins:</b> {player.get('wins', 0)} | <b>Losses:</b> {player.get('losses', 0)}\n"
+        f"<b>Kills:</b> {player.get('kills', 0)} ☠️"
+    )
+    await update.message.reply_text(profile_text, parse_mode="HTML")
 
 async def village_selection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query; await query.answer(); user = query.from_user
@@ -128,7 +168,7 @@ async def village_selection_callback(update: Update, context: ContextTypes.DEFAU
     v_key = query.data.split('_')[1]; v_name = gl.VILLAGES[v_key]
     if db.create_player(user.id, user.username or user.first_name, v_name):
         kb = [[InlineKeyboardButton("❓ Help", callback_data="show_main_help")], [InlineKeyboardButton("UPDATES", url="https://t.me/SN_Telegram_bots_Stores")]]
-        await query.edit_message_caption(caption=f"🎉 **Registration Complete!** 🎉\n\n{user.mention_html()} has joined **{v_name}**!\nYour ninja journey begins now. Use /profile to see your stats.", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb))
+        await query.edit_message_caption(caption=f"🎉 **Registration Complete!** 🎉\n\n{user.mention_html()} has joined **{v_name}**!\nYour journey begins now. Use /profile to see your stats.", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb))
 
 def main():
     logger.info("Starting bot..."); db.create_tables(); db.update_schema()
@@ -143,9 +183,7 @@ def main():
     app.add_handler(CommandHandler(("wallet", "bal", "balance"), minigames.wallet_command))
     app.add_handler(CommandHandler(("steal", "rob"), minigames.steal_command))
     app.add_handler(CommandHandler("scout", minigames.scout_command))
-    # --- CHANGED: /assassinate is now /kill ---
-    app.add_handler(CommandHandler("kill", minigames.assassinate_command)) 
-    # ------------------------------------------
+    app.add_handler(CommandHandler("kill", minigames.assassinate_command))
     app.add_handler(CommandHandler("gift", minigames.gift_command))
     app.add_handler(CommandHandler("protect", minigames.protect_command))
     app.add_handler(CommandHandler("heal", minigames.heal_command))
@@ -154,6 +192,7 @@ def main():
     app.add_handler(CallbackQueryHandler(daily.daily_callback, pattern="^daily_claim_check$"))
 
     app.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
+    app.add_handler(CommandHandler("topkillers", leaderboard.topkillers_command))
     app.add_handler(CallbackQueryHandler(leaderboard.leaderboard_back_callback, pattern="^leaderboard_main$"))
     app.add_handler(CallbackQueryHandler(leaderboard.leaderboard_callback, pattern="^leaderboard_"))
 
