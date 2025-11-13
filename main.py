@@ -18,7 +18,8 @@ from telegram.ext import (
     ContextTypes,
     JobQueue,
     MessageHandler, 
-    filters 
+    filters,
+    InlineQueryHandler # <-- NEW IMPORT
 )
 from telegram.ext import ChatMemberHandler
 from telegram.constants import ChatType
@@ -42,12 +43,13 @@ import minigames
 import leaderboard 
 import chat_rewards
 import daily 
+import inline_handler # <-- NEW IMPORT
 
 # --- Constants ---
-BOT_TOKEN = "7307409890:AAERVuaVSOOOLGv_anuULfQR_MRPRSvLt_U" # Your Test Bot Token
+BOT_TOKEN = "7307409890:AAHrBGraKUVlCPaMQdVKNkS45Qg8x5vgRM8" # Your Test Bot Token
 START_IMAGE_URL = "https://envs.sh/r6z.jpg" 
 
-# --- NEW: Welcome Message Function ---
+# --- Welcome Message Function ---
 async def on_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends a welcome message when the bot is added to a new group."""
     for member in update.message.new_chat_members:
@@ -56,7 +58,6 @@ async def on_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE
             kb = [[InlineKeyboardButton("SUMMON ME", url="https://t.me/Naruto_gameXBot?startgroup=true")], [InlineKeyboardButton("UPDATES", url="https://t.me/SN_Telegram_bots_Stores")]]
             await context.bot.send_photo(update.message.chat.id, photo=START_IMAGE_URL, caption="🔥 **A new Shinobi has entered!**\nType `/register` to begin!", reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
 
-# --- NEW: /register Command ---
 async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Allows users to register directly in the group."""
     user = update.effective_user
@@ -77,7 +78,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     updates_button = InlineKeyboardButton("UPDATES", url="https://t.me/SN_Telegram_bots_Stores")
     
     if player:
-        # --- THIS IS THE FULL, CORRECT TEXT ---
         welcome_text = (
             f"🔥 Welcome back, {player.get('rank', 'Ninja')} {player.get('username', 'User')} of {player.get('village', 'Unknown Village')}! 🔥\n\n"
             "The path of the ninja is long and challenging. Continue your training, undertake perilous missions, and prove your strength against rivals!\n\n"
@@ -94,7 +94,6 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"Hey {user.mention_html()}! Please use /register to start your journey in this group.", parse_mode="HTML")
             return
             
-        # --- THIS IS THE FULL, CORRECT TEXT ---
         welcome_text = (
             f"Greetings, {user.first_name}! A new legend begins...\n\n"
             "✨ Welcome to the <b>Shinobi Chronicles RPG</b>! ✨\n\n"
@@ -157,7 +156,7 @@ def main():
     app.add_handler(CommandHandler(("wallet", "bal", "balance"), minigames.wallet_command))
     app.add_handler(CommandHandler(("steal", "rob"), minigames.steal_command))
     app.add_handler(CommandHandler("scout", minigames.scout_command))
-    app.add_handler(CommandHandler("kill", minigames.kill_command)) # <-- CORRECTED
+    app.add_handler(CommandHandler("kill", minigames.kill_command))
     app.add_handler(CommandHandler("gift", minigames.gift_command))
     app.add_handler(CommandHandler("protect", minigames.protect_command))
     app.add_handler(CommandHandler("heal", minigames.heal_command))
@@ -166,7 +165,7 @@ def main():
     app.add_handler(CommandHandler("daily", daily.daily_command))
     app.add_handler(CallbackQueryHandler(daily.daily_callback, pattern="^daily_claim_check$"))
     app.add_handler(CommandHandler("leaderboard", leaderboard.leaderboard_command))
-    app.add_handler(CommandHandler("topkillers", leaderboard.topkillers_command)) # <-- CORRECTED
+    app.add_handler(CommandHandler("topkillers", leaderboard.topkillers_command))
     app.add_handler(CallbackQueryHandler(leaderboard.leaderboard_back_callback, pattern="^leaderboard_main$"))
     app.add_handler(CallbackQueryHandler(leaderboard.leaderboard_callback, pattern="^leaderboard_"))
 
@@ -211,12 +210,13 @@ def main():
     # Akatsuki Event
     app.add_handler(CommandHandler(("auto_fight_off", "auto_Ryo_Off"), akatsuki_event.toggle_auto_fight_command))
     app.add_handler(CommandHandler("auto_fight_on", akatsuki_event.toggle_auto_fight_command))
-    app.add_handler(CallbackQueryHandler(akatsuki_event.akatsuki_join_callback, pattern="^akatsuki_join$"))
-    app.add_handler(CallbackQueryHandler(akatsuki_event.akatsuki_action_callback, pattern="^akatsuki_action_"))
-    app.add_handler(CallbackQueryHandler(akatsuki_event.akatsuki_jutsu_callback, pattern="^akatsuki_jutsu_"))
+    
+    # --- NEW: INLINE HANDLER ---
+    app.add_handler(InlineQueryHandler(inline_handler.inline_query_handler))
+    # --- END NEW ---
     
     # Passive Handlers
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_chat_members))
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMERS, on_new_chat_members))
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & (~filters.COMMAND) & (~filters.StatusUpdate.NEW_CHAT_MEMBERS), akatsuki_event.passive_group_register), group=-1)
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & filters.ChatType.GROUPS, chat_rewards.on_chat_message), group=10)
 
@@ -229,7 +229,8 @@ def main():
     # Job Schedule
     if app.job_queue:
         app.job_queue.run_repeating(world_boss.spawn_world_boss, interval=3600, first=10)
-        app.job_queue.run_repeating(akatsuki_event.spawn_akatsuki_event, interval=10800, first=20) 
+        logger.info("World Boss spawn job scheduled (1 hour).")
+        # Akatsuki job is removed
 
     logger.info("Bot is polling..."); app.run_polling()
 
