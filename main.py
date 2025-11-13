@@ -46,7 +46,7 @@ import daily
 import inline_handler # <-- NEW IMPORT
 
 # --- Constants ---
-BOT_TOKEN = "7307409890:AAHrBGraKUVlCPaMQdVKNkS45Qg8x5vgRM8" # Your Test Bot Token
+BOT_TOKEN = "7307409890:AAERVuaVSOOOLGv_anuULfQR_MRPRSvLt_U" # Your Test Bot Token
 START_IMAGE_URL = "https://envs.sh/r6z.jpg" 
 
 # --- Welcome Message Function ---
