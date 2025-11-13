@@ -1,190 +1,220 @@
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
-from telegram.error import BadRequest
+import uuid
+import random
+import datetime # <-- NEW IMPORT
+from html import escape
+from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ContextTypes
-import game_logic as gl 
+
+import database as db
+import game_logic as gl
 
 logger = logging.getLogger(__name__)
 
-HELP_IMAGE_URL = "https://envs.sh/r6f.jpg" 
+# --- NEW: Daily Pack Constants ---
+PACK_COMMON_CHANCE = 0.70 # 70%
+PACK_UNCOMMON_CHANCE = 0.20 # 20%
+PACK_RARE_CHANCE = 0.08 # 8%
+# Legendary is the remaining 2%
+# ------------------------------
 
-# --- Main Help Menu ---
+def get_wallet_text(player):
+    """Generates the HTML text for a player's wallet card."""
+    is_hosp, _ = gl.get_hospital_status(player)
+    status_text = "🏥 Hospitalized" if is_hosp else "❤️ Alive"
+    wallet_text = (
+        f"<b>--- 🥷 {escape(player['username'])}'s Wallet 🥷 ---</b>\n\n"
+        f"<b>Rank:</b> {player['rank']}\n"
+        f"<b>Level:</b> {player['level']}\n"
+        f"<b>Ryo:</b> {player['ryo']:,} 💰\n"
+        f"<b>Kills:</b> {player.get('kills', 0)} ☠️\n"
+        f"<b>Status:</b> {status_text}"
+    )
+    return wallet_text
 
-async def show_main_help_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Shows the main help menu, ALWAYS sending a new photo message."""
-    
-    help_caption = "<b>--- ❓ Bot Help & Commands ❓ ---</b>\n\n"
-    help_caption += "Select a topic below for detailed instructions:"
-    
-    keyboard = [
-        [InlineKeyboardButton("👤 PROFILE INFO", callback_data="help_module_profile"), 
-         InlineKeyboardButton("🗺️ Mission Guide", callback_data="help_module_missions")],
-        [InlineKeyboardButton("💪 SPECIAL TRAINING", callback_data="help_module_training"), 
-         InlineKeyboardButton("🌀 Jutsu & Discovery", callback_data="help_module_jutsu")],
-        [InlineKeyboardButton("⚔️ BATTLE MODES", callback_data="help_module_battle"), 
-         InlineKeyboardButton("🛒 Shop Guide", callback_data="help_module_shop")],
-        [InlineKeyboardButton("👹 BOSS SPWAN", callback_data="help_module_boss"), 
-         InlineKeyboardButton("🔥 Akatsuki Ambush", callback_data="help_module_akatsuki")],
-        [InlineKeyboardButton("🎲 Mini-Games (Steal, etc)", callback_data="help_module_minigames")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-
-    query = update.callback_query
-    chat_id = query.message.chat_id if query else update.message.chat_id
-    
-    if query: 
-        # If called from a button, try to delete the old message first
-        try: await query.answer(); await query.message.delete() 
-        except Exception as e: logger.warning(f"Could not delete old help message: {e}")
-        
-    # Always send a fresh photo message for the main menu
-    try:
-        await context.bot.send_photo(
-            chat_id=chat_id, photo=HELP_IMAGE_URL, caption=help_caption,
-            reply_markup=reply_markup, parse_mode="HTML"
-        )
-    except Exception as e:
-        logger.error(f"Failed to send main help photo: {e}. Sending text only.")
-        await context.bot.send_message( 
-            chat_id=chat_id, text=help_caption, 
-            reply_markup=reply_markup, parse_mode="HTML"
-        )
-
-# --- Module-Specific Help Callbacks ---
-
-async def show_module_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Deletes the photo message and sends the module help as a new TEXT message."""
-    query = update.callback_query
-    await query.answer()
-
-    module = query.data.split('_')[-1] 
-    chat_id = query.message.chat_id
-    
-    help_text = ""
-    
-    if module == "profile":
-        help_text += "<b>--- 👤 Profile Help 👤 ---</b>\n\n"
-        help_text += "Your profile is your ninja identity. It shows all your stats and progress.\n\n"
-        help_text += "  •  `/profile`: Shows your stats, level, EXP, Ryo, and equipped items.\n"
-        help_text += "  •  `/inventory`: Shows all consumable items you have bought, like Health Potions.\n"
-        help_text += "  •  `/wallet` (or `/bal`): A quick way to show your Rank, Level, and Ryo to the group.\n\n"
-        help_text += "  •  **Level**: Gain EXP from missions and battles to level up.\n"
-        help_text += "  •  **Stats**: Stats increase automatically on level up.\n"
-        help_text += "    - **Str (Strength)**: Increases Taijutsu damage.\n"
-        help_text += "    - **Spd (Speed)**: Increases chance to go first in battle and critical hit chance.\n"
-        help_text += "    - **Int (Intelligence)**: Increases Jutsu damage and Max Chakra.\n"
-        help_text += "    - **Stam (Stamina)**: Increases your Max HP.\n"
-        
-    elif module == "missions":
-        help_text += "<b>--- 🗺️ Mission Help 🗺️ ---</b>\n\n"
-        help_text += "Missions are the main way to get EXP and Ryo (money).\n\n"
-        help_text += "  •  Use `/missions` to open the mission board.\n"
-        help_text += "  •  Select a mission you meet the level requirement for.\n"
-        help_text += "  •  Higher-rank missions give much better rewards but require a higher level."
-
-    elif module == "training":
-        help_text += "<b>--- 💪 Training Help 💪 ---</b>\n\n"
-        help_text += "Training permanently increases your base stats, but you can only do it a few times per day.\n\n"
-        help_text += "  •  Use `/train` to see available training.\n"
-        help_text += "  •  **Chakra Control**: Increases your Max Chakra.\n"
-        help_text += "  •  **Taijutsu**: Increases your Strength.\n\n"
-        help_text += "💡 **TIP:** Training also fully restores your HP and Chakra, so it's a great way to heal after a battle!"
-
-    elif module == "jutsu":
-        help_text += "<b>--- 🌀 Jutsu & Discovery 🌀 ---</b>\n\n"
-        help_text += "Jutsus are powerful attacks used in battle. You must discover them first!\n\n"
-        help_text += "  •  `/jutsus`: Lists all the jutsus you have learned.\n"
-        help_text += "  •  `/combine [signs]`: Try to discover a new jutsu by combining hand signs.\n\n"
-        help_text += "<b>Example:</b>\n`/combine tiger snake bird`\n\n"
-        help_text += "<b>--- Available Hand Signs ---</b>\n"
-        help_text += "You must combine these in the correct order to learn a new jutsu:\n\n"
-        signs_list = " • ".join([sign.title() for sign in gl.HAND_SIGNS])
-        help_text += f"<code>{signs_list}</code>"
-
-    elif module == "battle":
-        help_text += "<b>--- ⚔️ Battle Help ⚔️ ---</b>\n\n"
-        help_text += "Challenge other ninjas in the group to a 1v1 battle.\n\n"
-        help_text += "  •  To challenge, reply to another user's message and type `/battle`.\n"
-        help_text += "  •  The winner gains EXP and Ryo!\n"
-        help_text += "  •  **Taijutsu**: A basic attack based on your Strength.\n"
-        help_text += "  •  **Use Jutsu**: Use your learned jutsus. This costs Chakra.\n"
-        help_text += "  •  **Use Item**: Use a consumable item from your inventory, like a Health Potion."
-
-    elif module == "shop":
-        help_text += "<b>--- 🛒 Shop Help 🛒 ---</b>\n\n"
-        help_text += "Use your Ryo to buy new equipment and items.\n\n"
-        help_text += "  •  Use `/shop` to open the item list.\n"
-        help_text += "  •  **Equipment**: (Weapons, Armor) These are equipped automatically and boost your stats.\n"
-        help_text += "  •  **Consumables**: (Health Potion) These are added to your `/inventory` to be used in battle."
-
-    elif module == "boss":
-        help_text += "👹 --- **World Boss Spawn Guide** --- 👹\n\n"
-        help_text += "A World Boss is a massive enemy that everyone in the group can attack together!\n\n"
-        help_text += "  •  A boss will spawn automatically every **1 hour**.\n"
-        help_text += "  •  Use the buttons to attack (Taijutsu, Kunai, Jutsu).\n"
-        help_text += "  •  Attacking costs a small amount of HP (recoil damage).\n"
-        help_text += "  •  When the boss is defeated, the **Ryo Pool** is divided among all attackers based on how much damage they dealt."
-
-    elif module == "akatsuki":
-        help_text += "<b>--- 🔥 Akatsuki Ambush --- 🔥</b>\n\n"
-        help_text += "This is an automatic event where a rogue ninja ambushes the group!\n\n"
-        help_text += "  •  An event will spawn automatically every **3 hours**.\n"
-        help_text += "  •  Up to **3 players** can click the button to join the fight.\n"
-        help_text += "  •  It is a turn-based battle. The 3 players take their turns, then the AI attacks.\n"
-        help_text += "  •  If the event is not finished after 3 hours, it will expire and a new one will be sent.\n\n"
-        help_text += "<b>Rewards:</b>\n"
-        help_text += " • If your team wins, all 3 participants get **+110 EXP** and **+180 Ryo**!\n\n"
-        help_text += "<b>Admin Command (Opt-Out):</b>\n"
-        help_text += " • Group admins can use /auto_fight_off to stop these events."
-    
-    elif module == "minigames":
-        help_text += "<b>--- 🎲 Mini-Games Help 🎲 ---</b>\n\n"
-        help_text += "Fun commands to interact with other players and earn rewards.\n\n"
-        
-        help_text += "<b>/wallet</b> (or /bal)\n"
-        help_text += "  •  Shows your Rank, Level, and Ryo. A quick way to show off!\n\n"
-
-        help_text += "<b>/scout</b>\n"
-        help_text += "  •  Scout the area for rewards. Can be used once per hour.\n"
-        help_text += "  •  Has a 25% chance to find Ryo and a 5% chance to find EXP.\n\n"
-        
-        help_text += "<b>/rob</b> (or /steal)\n"
-        help_text += "  •  Reply to a user with `/rob` to try and pickpocket them.\n"
-        help_text += "  •  **Success Chance:** Starts at 60%, increases with your **Speed** stat!\n"
-        help_text += "  •  **Cost:** 15 Chakra per attempt.\n\n"
-        
-        help_text += "<b>/assassinate</b>\n"
-        help_text += "  •  A high-risk, high-reward mission. Reply to a user with `/assassinate`.\n"
-        help_text += "  •  **Cost:** 200 Ryo just to attempt the mission.\n"
-        help_text += "  •  **Success:** Steal 10% of their Ryo (max 1,000), gain 100 EXP, and **HOSPITALIZE** them for 3 hours!\n"
-        help_text += "  •  **Fail:** You lose your 200 Ryo payment.\n"
-        help_text += "  •  Cooldown: 24 hours.\n\n"
-
-        help_text += "<b>/protect</b>\n"
-        help_text += "  •  Hire Anbu guards to block ALL rob and assassinate attempts.\n"
-        help_text += "  •  Cost: 500 Ryo for 1 day, or 1300 Ryo for 3 days (use `/protect 3d`).\n\n"
-        
-        help_text += "<b>/heal</b>\n"
-        help_text += "  •  Pay 300 Ryo to instantly leave the hospital if you were assassinated."
-    
+def get_top_killers_text():
+    """Generates the HTML text for the Top 5 Killers."""
+    text = "☠️ **Top 5 Deadliest Ninja** ☠️\n*(By Kills)*\n\n"
+    top_players = db.get_top_players_by_kills(limit=5)
+    if not top_players:
+        text += "No successful kills yet..."
     else:
-        help_text = "Help information for this module is not available yet."
+        for i, p in enumerate(top_players):
+            rank = ["🥇", "🥈", "🥉"][i] if i < 3 else f"<b>{i+1}.</b>"
+            mention = f'<a href="tg://user?id={p["user_id"]}">{escape(p["username"])}</a>'
+            text += f"{rank} {mention} - {p['kills']} Kills\n"
+    return text
 
-    keyboard = [[InlineKeyboardButton("⬅️ Back to Help Menu", callback_data="back_to_main_help")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+def get_top_rich_text():
+    """Generates the HTML text for the Top 5 Richest."""
+    text = "💰 **Top 5 Richest Ninja** 💰\n*(By Total Ryo)*\n\n"
+    top_players = db.get_top_players_by_ryo(limit=5)
+    if not top_players:
+        text += "No one has any Ryo..."
+    else:
+        for i, p in enumerate(top_players):
+            rank = ["🥇", "🥈", "🥉"][i] if i < 3 else f"<b>{i+1}.</b>"
+            mention = f'<a href="tg://user?id={p["user_id"]}">{escape(p["username"])}</a>'
+            text += f"{rank} {mention} - {p['ryo']:,} Ryo\n"
+    return text
+
+# --- NEW HELPER FUNCTION ---
+def get_daily_pack_prize(player):
+    """
+    Calculates a random prize for the daily pack.
+    Returns (prize_text, updates_dict)
+    """
+    roll = random.random()
     
-    try: await query.message.delete()
-    except Exception as e: logger.warning(f"Could not delete help photo message: {e}")
+    if roll < PACK_COMMON_CHANCE:
+        # Common: 50-100 Ryo
+        prize_ryo = random.randint(50, 100)
+        prize_text = f"💰 **{prize_ryo} Ryo**"
+        updates = {'ryo': player['ryo'] + prize_ryo}
+        return prize_text, updates
         
-    try:
-        await context.bot.send_message( 
-            chat_id=chat_id, text=help_text, 
-            reply_markup=reply_markup, parse_mode="HTML"
-        )
-    except Exception as e:
-        logger.error(f"Failed to send help text message for {module}: {e}")
+    elif roll < PACK_COMMON_CHANCE + PACK_UNCOMMON_CHANCE:
+        # Uncommon: 150-250 Ryo
+        prize_ryo = random.randint(150, 250)
+        prize_text = f"💰💰 **{prize_ryo} Ryo**"
+        updates = {'ryo': player['ryo'] + prize_ryo}
+        return prize_text, updates
+        
+    elif roll < PACK_COMMON_CHANCE + PACK_UNCOMMON_CHANCE + PACK_RARE_CHANCE:
+        # Rare: A random pill
+        pill = random.choice(['health_potion', 'chakra_pill'])
+        prize_text = f"🧪 **1x {gl.SHOP_INVENTORY[pill]['name']}**"
+        
+        inventory = player.get('inventory') or []
+        # Handle if inventory is string (old data) or list
+        if isinstance(inventory, str):
+            try:
+                inventory = json.loads(inventory)
+                if not isinstance(inventory, list): inventory = []
+            except:
+                inventory = []
+                
+        inventory.append(pill)
+        updates = {'inventory': inventory}
+        return prize_text, updates
+        
+    else:
+        # Legendary: 500 Ryo + 100 EXP
+        prize_ryo = 500
+        prize_exp = 100
+        prize_text = f"🎉 **LEGENDARY!** {prize_ryo} Ryo and {prize_exp} EXP!"
+        updates = {
+            'ryo': player['ryo'] + prize_ryo,
+            'exp': player['exp'] + prize_exp,
+            'total_exp': player['total_exp'] + prize_exp
+        }
+        # We can even check for level up here if we want, but let's keep it simple
+        return prize_text, updates
+# --- END NEW HELPER ---
 
-# --- Back Button Callback (unchanged) ---
-async def back_to_main_help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Just call the main menu function, it handles deleting the old text message.
-    await show_main_help_menu(update, context)
+
+async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles all inline queries (@BotName ...)."""
+    query = update.inline_query
+    if not query:
+        return
+
+    user_id = query.from_user.id
+    player = db.get_player(user_id)
+    results = []
+
+    if player:
+        # --- 1. Show My Wallet ---
+        wallet_text = get_wallet_text(player)
+        results.append(
+            InlineQueryResultArticle(
+                id=str(uuid.uuid4()),
+                title="🥷 Show My Wallet (Flex!)",
+                description=f"Post your Lvl {player['level']} | {player['ryo']} Ryo | {player.get('kills', 0)} Kills card",
+                input_message_content=InputTextMessageContent(wallet_text, parse_mode="HTML")
+            )
+        )
+        
+        # --- 2. Show Top Killers ---
+        killers_text = get_top_killers_text()
+        results.append(
+            InlineQueryResultArticle(
+                id=str(uuid.uuid4()),
+                title="☠️ Show Top 5 Killers",
+                description="Post the 'Top Killers' leaderboard here.",
+                input_message_content=InputTextMessageContent(killers_text, parse_mode="HTML")
+            )
+        )
+        
+        # --- 3. Show Top Richest ---
+        rich_text = get_top_rich_text()
+        results.append(
+            InlineQueryResultArticle(
+                id=str(uuid.uuid4()),
+                title="💰 Show Top 5 Richest",
+                description="Post the 'Top Richest' leaderboard here.",
+                input_message_content=InputTextMessageContent(rich_text, parse_mode="HTML")
+            )
+        )
+        
+        # --- 4. REPLACED: Daily Shinobi Pack ---
+        today = datetime.date.today()
+        last_claim = player.get('last_inline_game_date')
+        
+        # Convert from DB string if needed
+        if isinstance(last_claim, str):
+            try:
+                last_claim = datetime.date.fromisoformat(last_claim)
+            except ValueError:
+                last_claim = None # Handle bad data
+
+        if last_claim == today:
+            # --- Already claimed ---
+            results.append(
+                InlineQueryResultArticle(
+                    id="daily_pack_claimed",
+                    title="❌ Daily Pack Already Claimed",
+                    description="Come back tomorrow for your next free pack!",
+                    input_message_content=InputTextMessageContent(
+                        f"{escape(player['username'])} is patiently waiting for their next daily pack."
+                    )
+                )
+            )
+        else:
+            # --- Not claimed yet! ---
+            
+            # 1. Determine the prize
+            prize_text, prize_updates = get_daily_pack_prize(player)
+            
+            # 2. Add the "claimed" timestamp to the updates
+            prize_updates['last_inline_game_date'] = today
+            
+            # 3. Save to database
+            db.update_player(user_id, prize_updates)
+            
+            # 4. Create the result
+            results.append(
+                InlineQueryResultArticle(
+                    id="daily_pack_claim",
+                    title="🎒 Open your Daily Shinobi Pack!",
+                    description="Click to see what you got!",
+                    input_message_content=InputTextMessageContent(
+                        f"🎉 **{escape(player['username'])} opened their Daily Shinobi Pack and found...**\n\n{prize_text}!",
+                        parse_mode="HTML"
+                    )
+                )
+            )
+        # --- END NEW ---
+            
+    else:
+        # --- Not registered ---
+        results.append(
+            InlineQueryResultArticle(
+                id="register",
+                title="❌ You are not registered!",
+                description="Click here to ask how to join.",
+                input_message_content=InputTextMessageContent(f"Hey everyone, how do I /register for @{context.bot.username}?")
+            )
+        )
+
+    await query.answer(results, cache_time=5) # 5 second cache so game is fresh
