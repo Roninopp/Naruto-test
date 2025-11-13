@@ -1,7 +1,7 @@
 import logging
 import uuid
 import random
-import datetime # <-- NEW IMPORT
+import datetime # <-- We need this for the daily pack
 from html import escape
 from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ContextTypes
@@ -11,12 +11,28 @@ import game_logic as gl
 
 logger = logging.getLogger(__name__)
 
-# --- NEW: Daily Pack Constants ---
-PACK_COMMON_CHANCE = 0.70 # 70%
-PACK_UNCOMMON_CHANCE = 0.20 # 20%
-PACK_RARE_CHANCE = 0.08 # 8%
-# Legendary is the remaining 2%
-# ------------------------------
+# --- Daily Pack Loot Table ---
+# (Rarity, Type, Key, Amount, Name)
+PACK_LOOT_TABLE = [
+    (100, 'ryo', 'ryo', 50, "Common Ryo Pouch"),       # Common
+    (100, 'ryo', 'ryo', 75, "Common Ryo Pouch"),       # Common
+    (50,  'ryo', 'ryo', 150, "Uncommon Ryo Pouch"),    # Uncommon
+    (25,  'item', 'health_potion', 1, "Health Potion"), # Uncommon
+    (10,  'ryo', 'ryo', 500, "Rare Ryo Chest"),        # Rare
+    (5,   'item', 'soldier_pill', 1, "Soldier Pill"),  # Rare
+    (1,   'exp', 'exp', 100, "Legendary EXP Scroll")   # Legendary
+]
+
+# --- NEW: Hand Sign Game ---
+GAME_COST = 25
+GAME_WIN_MULTIPLIER = 3 # 1-in-3 chance, so 3x reward
+GAME_WIN_AMOUNT = GAME_COST * GAME_WIN_MULTIPLIER
+HAND_SIGNS = [
+    ("tiger", "🐅"),
+    ("snake", "🐍"),
+    ("bird", "🐦")
+]
+# ---------------------------
 
 def get_wallet_text(player):
     """Generates the HTML text for a player's wallet card."""
@@ -58,59 +74,30 @@ def get_top_rich_text():
             text += f"{rank} {mention} - {p['ryo']:,} Ryo\n"
     return text
 
-# --- NEW HELPER FUNCTION ---
 def get_daily_pack_prize(player):
-    """
-    Calculates a random prize for the daily pack.
-    Returns (prize_text, updates_dict)
-    """
-    roll = random.random()
+    """Runs the loot table, returns the text and the db update dict."""
+    prize = random.choices(PACK_LOOT_TABLE, weights=[p[0] for p in PACK_LOOT_TABLE], k=1)[0]
+    _, p_type, p_key, p_amount, p_name = prize
     
-    if roll < PACK_COMMON_CHANCE:
-        # Common: 50-100 Ryo
-        prize_ryo = random.randint(50, 100)
-        prize_text = f"💰 **{prize_ryo} Ryo**"
-        updates = {'ryo': player['ryo'] + prize_ryo}
-        return prize_text, updates
-        
-    elif roll < PACK_COMMON_CHANCE + PACK_UNCOMMON_CHANCE:
-        # Uncommon: 150-250 Ryo
-        prize_ryo = random.randint(150, 250)
-        prize_text = f"💰💰 **{prize_ryo} Ryo**"
-        updates = {'ryo': player['ryo'] + prize_ryo}
-        return prize_text, updates
-        
-    elif roll < PACK_COMMON_CHANCE + PACK_UNCOMMON_CHANCE + PACK_RARE_CHANCE:
-        # Rare: A random pill
-        pill = random.choice(['health_potion', 'chakra_pill'])
-        prize_text = f"🧪 **1x {gl.SHOP_INVENTORY[pill]['name']}**"
-        
+    updates = {'last_inline_game_date': datetime.date.today()}
+    result_text = ""
+
+    if p_type == 'ryo':
+        updates['ryo'] = player['ryo'] + p_amount
+        result_text = f"🎁 **Daily Pack!** 🎁\n{escape(player['username'])} opened a pack and found a **{p_name}**!\n💰 **You gain {p_amount} Ryo!**"
+    
+    elif p_type == 'item':
         inventory = player.get('inventory') or []
-        # Handle if inventory is string (old data) or list
-        if isinstance(inventory, str):
-            try:
-                inventory = json.loads(inventory)
-                if not isinstance(inventory, list): inventory = []
-            except:
-                inventory = []
-                
-        inventory.append(pill)
-        updates = {'inventory': inventory}
-        return prize_text, updates
-        
-    else:
-        # Legendary: 500 Ryo + 100 EXP
-        prize_ryo = 500
-        prize_exp = 100
-        prize_text = f"🎉 **LEGENDARY!** {prize_ryo} Ryo and {prize_exp} EXP!"
-        updates = {
-            'ryo': player['ryo'] + prize_ryo,
-            'exp': player['exp'] + prize_exp,
-            'total_exp': player['total_exp'] + prize_exp
-        }
-        # We can even check for level up here if we want, but let's keep it simple
-        return prize_text, updates
-# --- END NEW HELPER ---
+        inventory.append(p_key)
+        updates['inventory'] = inventory
+        result_text = f"🎁 **Daily Pack!** 🎁\n{escape(player['username'])} opened a pack and found a **{p_name}**!\n📦 It was added to your /inventory."
+
+    elif p_type == 'exp':
+        updates['exp'] = player['exp'] + p_amount
+        updates['total_exp'] = player['total_exp'] + p_amount
+        result_text = f"🎁 **Daily Pack!** 🎁\n{escape(player['username'])} opened a pack and found a **{p_name}**!\n✨ **You gain {p_amount} EXP!**"
+
+    return result_text, updates
 
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -124,11 +111,13 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     results = []
 
     if player:
+        is_hosp, _ = gl.get_hospital_status(player)
+        
         # --- 1. Show My Wallet ---
         wallet_text = get_wallet_text(player)
         results.append(
             InlineQueryResultArticle(
-                id=str(uuid.uuid4()),
+                id="wallet",
                 title="🥷 Show My Wallet (Flex!)",
                 description=f"Post your Lvl {player['level']} | {player['ryo']} Ryo | {player.get('kills', 0)} Kills card",
                 input_message_content=InputTextMessageContent(wallet_text, parse_mode="HTML")
@@ -139,7 +128,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         killers_text = get_top_killers_text()
         results.append(
             InlineQueryResultArticle(
-                id=str(uuid.uuid4()),
+                id="top_killers",
                 title="☠️ Show Top 5 Killers",
                 description="Post the 'Top Killers' leaderboard here.",
                 input_message_content=InputTextMessageContent(killers_text, parse_mode="HTML")
@@ -150,61 +139,109 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         rich_text = get_top_rich_text()
         results.append(
             InlineQueryResultArticle(
-                id=str(uuid.uuid4()),
+                id="top_rich",
                 title="💰 Show Top 5 Richest",
                 description="Post the 'Top Richest' leaderboard here.",
                 input_message_content=InputTextMessageContent(rich_text, parse_mode="HTML")
             )
         )
         
-        # --- 4. REPLACED: Daily Shinobi Pack ---
+        # --- 4. Daily Shinobi Pack (The one we already added) ---
         today = datetime.date.today()
-        last_claim = player.get('last_inline_game_date')
+        last_claim_str = player.get('last_inline_game_date')
+        last_claim = None
         
-        # Convert from DB string if needed
-        if isinstance(last_claim, str):
-            try:
-                last_claim = datetime.date.fromisoformat(last_claim)
-            except ValueError:
-                last_claim = None # Handle bad data
+        if last_claim_str:
+            try: last_claim = datetime.date.fromisoformat(last_claim_str)
+            except: pass
 
         if last_claim == today:
-            # --- Already claimed ---
+            # Already claimed
             results.append(
                 InlineQueryResultArticle(
                     id="daily_pack_claimed",
                     title="❌ Daily Pack Already Claimed",
                     description="Come back tomorrow for your next free pack!",
-                    input_message_content=InputTextMessageContent(
-                        f"{escape(player['username'])} is patiently waiting for their next daily pack."
-                    )
+                    input_message_content=InputTextMessageContent(f"I've already claimed my daily pack. Come back tomorrow!")
                 )
             )
         else:
-            # --- Not claimed yet! ---
+            # Not claimed yet
+            # --- IMPORTANT: We only update the DB when they *click* ---
+            # We create the text and updates here
+            result_text, updates = get_daily_pack_prize(player)
             
-            # 1. Determine the prize
-            prize_text, prize_updates = get_daily_pack_prize(player)
+            # Now we update the player in the database
+            db.update_player(user_id, updates)
             
-            # 2. Add the "claimed" timestamp to the updates
-            prize_updates['last_inline_game_date'] = today
-            
-            # 3. Save to database
-            db.update_player(user_id, prize_updates)
-            
-            # 4. Create the result
             results.append(
                 InlineQueryResultArticle(
-                    id="daily_pack_claim",
-                    title="🎒 Open your Daily Shinobi Pack!",
-                    description="Click to see what you got!",
-                    input_message_content=InputTextMessageContent(
-                        f"🎉 **{escape(player['username'])} opened their Daily Shinobi Pack and found...**\n\n{prize_text}!",
-                        parse_mode="HTML"
-                    )
+                    id="daily_pack_open",
+                    title="🎁 Open your Daily Shinobi Pack!",
+                    description="Get a free random reward once per day!",
+                    # The text that will be sent is the result_text
+                    input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
                 )
             )
-        # --- END NEW ---
+            
+        # --- 5. NEW: Hand Sign Game ---
+        if is_hosp:
+            results.append(
+                InlineQueryResultArticle(
+                    id="game_fail_hosp",
+                    title=f"❌ Cannot play games while hospitalized",
+                    description="Use /heal in a group to recover.",
+                    input_message_content=InputTextMessageContent("I can't play right now, I'm in the hospital!")
+                )
+            )
+        elif player['ryo'] < GAME_COST:
+            results.append(
+                InlineQueryResultArticle(
+                    id="game_fail_ryo",
+                    title=f"❌ Not enough Ryo (Need {GAME_COST})",
+                    description="Go rob someone or do missions!",
+                    input_message_content=InputTextMessageContent(f"I'm too poor to play, I need {GAME_COST} Ryo.")
+                )
+            )
+        else:
+            # Player can play!
+            # We must pre-calculate all 3 results
+            bot_sign_name, bot_sign_emoji = random.choice(HAND_SIGNS)
+            
+            for sign_name, sign_emoji in HAND_SIGNS:
+                
+                # We calculate the result for *this* button
+                if sign_name == bot_sign_name:
+                    # This is the WINNING button
+                    new_ryo = player['ryo'] + (GAME_WIN_AMOUNT - GAME_COST)
+                    db.update_player(user_id, {'ryo': new_ryo}) # Update DB
+                    result_text = (
+                        f"🎲 **Hand Sign Guess!** 🎲\n\n"
+                        f"You Chose: {sign_emoji}\n"
+                        f"Bot Chose: {bot_sign_emoji}\n\n"
+                        f"🎉 **IT'S A MATCH!** 🎉\n{escape(player['username'])} wins **{GAME_WIN_AMOUNT} Ryo**!"
+                    )
+                else:
+                    # This is a LOSING button
+                    new_ryo = player['ryo'] - GAME_COST
+                    db.update_player(user_id, {'ryo': new_ryo}) # Update DB
+                    result_text = (
+                        f"🎲 **Hand Sign Guess!** 🎲\n\n"
+                        f"You Chose: {sign_emoji}\n"
+                        f"Bot Chose: {bot_sign_emoji}\n\n"
+                        f"💔 **You lose!** {escape(player['username'])} lost {GAME_COST} Ryo."
+                    )
+                
+                # Add a result for this button
+                results.append(
+                    InlineQueryResultArticle(
+                        id=f"game_bet_{sign_name}_{uuid.uuid4()}", # Add UUID to make ID unique every time
+                        title=f"🎲 Bet on {sign_emoji} {sign_name.title()}",
+                        description=f"Cost: {GAME_COST} Ryo | Win: {GAME_WIN_AMOUNT} Ryo",
+                        input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
+                    )
+                )
+        # --- END NEW GAME ---
             
     else:
         # --- Not registered ---
@@ -217,4 +254,5 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         )
 
-    await query.answer(results, cache_time=5) # 5 second cache so game is fresh
+    # cache_time=0 is VERY important for a game, so it's a new game every time
+    await query.answer(results, cache_time=0)
