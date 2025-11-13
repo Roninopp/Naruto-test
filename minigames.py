@@ -14,7 +14,13 @@ logger = logging.getLogger(__name__)
 
 # --- Constants ---
 STEAL_CHAKRA_COST = 15 
-STEAL_BASE_SUCCESS_CHANCE = 0.60; STEAL_BASE_FAIL_CHANCE = 0.10; STEAL_BASE_AMOUNT = 30; STEAL_MAX_AMOUNT = 100; STEAL_FAIL_PENALTY = 20
+STEAL_BASE_SUCCESS_CHANCE = 0.60
+STEAL_BASE_FAIL_CHANCE = 0.10
+STEAL_BASE_AMOUNT = 30
+# --- THIS IS THE FIX ---
+STEAL_MAX_ROB_AMOUNT = 100 # Renamed from STEAL_MAX_AMOUNT
+# --- END OF FIX ---
+STEAL_FAIL_PENALTY = 20
 SCOUT_COOLDOWN_MINUTES = 60; SCOUT_EXP_CHANCE = 0.05; SCOUT_RYO_CHANCE = 0.25; SCOUT_EXP_REWARD = 50; SCOUT_RYO_REWARD = 25
 GIFT_TAX_PERCENT = 0.05; PROTECT_1D_COST = 500; PROTECT_3D_COST = 1300
 KILL_CHAKRA_COST = 30; KILL_RYO_REWARD = 100; KILL_EXP_REWARD = 140; KILL_BASE_SUCCESS = 0.50; HOSPITAL_DURATION_HOURS = 24; HEAL_COST = 300
@@ -100,12 +106,10 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     roll = random.random()
     
     if roll < success_chance:
-        # --- SUCCESS ---
         stealer_updates['ryo'] = stealer['ryo'] + amount_to_steal
         db.update_player(user.id, stealer_updates)
         db.update_player(victim_user.id, {'ryo': victim['ryo'] - amount_to_steal})
         
-        # --- NEW: Random Success Messages ---
         victim_name = escape(victim_user.first_name)
         success_messages = [
             f"✅ **Success!** You used a classic substitution jutsu and swiped **{amount_to_steal} Ryo** from **{victim_name}**!",
@@ -114,16 +118,13 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"✅ **Too Easy!** You stole **{amount_to_steal} Ryo** from **{victim_name}**. They'll never see it coming!"
         ]
         await safe_reply(update, context, random.choice(success_messages), parse_mode="HTML")
-        # --- END NEW ---
         
     elif roll < (success_chance + fail_chance):
-        # --- FAIL ---
         lose = min(stealer['ryo'], STEAL_FAIL_PENALTY)
         stealer_updates['ryo'] = stealer['ryo'] - lose
         db.update_player(user.id, stealer_updates)
         await safe_reply(update, context, f"❌ **Caught!** You paid a **{lose} Ryo** fine.", parse_mode="HTML")
     else:
-        # --- MISS ---
         db.update_player(user.id, stealer_updates)
         await safe_reply(update, context, "You failed to find anything.")
 
