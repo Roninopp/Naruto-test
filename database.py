@@ -60,7 +60,8 @@ def create_tables():
             scout_cooldown TIMESTAMP DEFAULT NULL, assassinate_cooldown TIMESTAMP DEFAULT NULL,
             daily_mission_count INTEGER DEFAULT 0, last_mission_reset_date DATE DEFAULT NULL,
             last_daily_claim DATE DEFAULT NULL, protection_until TIMESTAMP DEFAULT NULL,
-            hospitalized_until TIMESTAMP DEFAULT NULL, hospitalized_by BIGINT DEFAULT NULL, kills INTEGER DEFAULT 0
+            hospitalized_until TIMESTAMP DEFAULT NULL, hospitalized_by BIGINT DEFAULT NULL, kills INTEGER DEFAULT 0,
+            last_inline_game_date DATE DEFAULT NULL
         );
         """,
         """CREATE TABLE IF NOT EXISTS jutsu_discoveries (id SERIAL PRIMARY KEY, combination TEXT UNIQUE, jutsu_name TEXT, discovered_by TEXT, discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);""",
@@ -97,7 +98,8 @@ def update_schema():
             ('scout_cooldown', 'TIMESTAMP DEFAULT NULL'), ('assassinate_cooldown', 'TIMESTAMP DEFAULT NULL'),
             ('daily_mission_count', 'INTEGER DEFAULT 0'), ('last_mission_reset_date', 'DATE DEFAULT NULL'),
             ('last_daily_claim', 'DATE DEFAULT NULL'), ('protection_until', 'TIMESTAMP DEFAULT NULL'),
-            ('hospitalized_until', 'TIMESTAMP DEFAULT NULL'), ('hospitalized_by', 'BIGINT DEFAULT NULL'), ('kills', 'INTEGER DEFAULT 0')
+            ('hospitalized_until', 'TIMESTAMP DEFAULT NULL'), ('hospitalized_by', 'BIGINT DEFAULT NULL'), ('kills', 'INTEGER DEFAULT 0'),
+            ('last_inline_game_date', 'DATE DEFAULT NULL')
         ]
     }
     try:
@@ -126,7 +128,7 @@ def get_player(user_id):
                     cp[k] = datetime.datetime.fromisoformat(cp[k])
                 except:
                     pass
-        for k in ['last_train_reset_date','last_mission_reset_date','last_daily_claim']:
+        for k in ['last_train_reset_date','last_mission_reset_date','last_daily_claim','last_inline_game_date']:
              if cp.get(k):
                  try:
                      cp[k] = datetime.date.fromisoformat(cp[k])
@@ -154,10 +156,10 @@ def create_player(user_id, username, village):
     conn = get_db_connection()
     if not conn: return False
     s = gl.distribute_stats({'strength':10,'speed':10,'intelligence':10,'stamina':10}, 0)
-    sql = """INSERT INTO players (user_id, username, village, max_hp, current_hp, max_chakra, current_chakra, strength, speed, intelligence, stamina, equipment, inventory, daily_train_count, last_train_reset_date, boss_attack_cooldown, story_progress, akatsuki_cooldown, known_jutsus, discovered_combinations, steal_cooldown, scout_cooldown, assassinate_cooldown, daily_mission_count, last_mission_reset_date, last_daily_claim, protection_until, hospitalized_until, hospitalized_by, kills) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+    sql = """INSERT INTO players (user_id, username, village, max_hp, current_hp, max_chakra, current_chakra, strength, speed, intelligence, stamina, equipment, inventory, daily_train_count, last_train_reset_date, boss_attack_cooldown, story_progress, akatsuki_cooldown, known_jutsus, discovered_combinations, steal_cooldown, scout_cooldown, assassinate_cooldown, daily_mission_count, last_mission_reset_date, last_daily_claim, protection_until, hospitalized_until, hospitalized_by, kills, last_inline_game_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
     try:
         with conn.cursor() as c:
-            c.execute(sql, (user_id, username, village, s['max_hp'], s['max_hp'], s['max_chakra'], s['max_chakra'], s['strength'], s['speed'], s['intelligence'], s['stamina'], '{}', '[]', 0, None, None, 0, None, '[]', '[]', None, None, None, 0, None, None, None, None, None, 0))
+            c.execute(sql, (user_id, username, village, s['max_hp'], s['max_hp'], s['max_chakra'], s['max_chakra'], s['strength'], s['speed'], s['intelligence'], s['stamina'], '{}', '[]', 0, None, None, 0, None, '[]', '[]', None, None, None, 0, None, None, None, None, None, 0, None))
         conn.commit()
         logger.info(f"New player created: {username} (ID: {user_id})")
         cache.clear_player_cache(user_id)
