@@ -19,7 +19,7 @@ from telegram.ext import (
     JobQueue,
     MessageHandler, 
     filters,
-    InlineQueryHandler # <-- NEW IMPORT
+    InlineQueryHandler # <-- IMPORT
 )
 from telegram.ext import ChatMemberHandler
 from telegram.constants import ChatType
@@ -43,7 +43,7 @@ import minigames
 import leaderboard 
 import chat_rewards
 import daily 
-import inline_handler # <-- NEW IMPORT
+import inline_handler # <-- IMPORT
 
 # --- Constants ---
 BOT_TOKEN = "7307409890:AAERVuaVSOOOLGv_anuULfQR_MRPRSvLt_U" # Your Test Bot Token
@@ -52,11 +52,49 @@ START_IMAGE_URL = "https://envs.sh/r6z.jpg"
 # --- Welcome Message Function ---
 async def on_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends a welcome message when the bot is added to a new group."""
-    for member in update.message.new_chat_members:
-        if member.id == context.bot.id:
-            db.register_event_chat(update.message.chat.id)
-            kb = [[InlineKeyboardButton("SUMMON ME", url="https://t.me/Naruto_gameXBot?startgroup=true")], [InlineKeyboardButton("UPDATES", url="https://t.me/SN_Telegram_bots_Stores")]]
-            await context.bot.send_photo(update.message.chat.id, photo=START_IMAGE_URL, caption="🔥 **A new Shinobi has entered!**\nType `/register` to begin!", reply_markup=InlineKeyboardMarkup(kb), parse_mode="HTML")
+    new_members = update.message.new_chat_members
+    bot_id = context.bot.id
+
+    for member in new_members:
+        if member.id == bot_id:
+            chat_id = update.message.chat.id
+            logger.info(f"Bot was added to new group: {chat_id}")
+            
+            # Auto-register the group for events
+            db.register_event_chat(chat_id)
+            
+            welcome_text = (
+                "🔥 **A new Shinobi has entered the battle!** 🔥\n\n"
+                "Thank you for adding me to your group!\n\n"
+                "I am a Naruto RPG bot with missions, battles, world bosses, and more. "
+                "Your journey begins now!\n\n"
+                "All members type `/register` to create your ninja!"
+            )
+            
+            keyboard = [
+                [InlineKeyboardButton("SUMMON ME (Add to your group)", url="https://t.me/Naruto_gameXBot?startgroup=true")],
+                [InlineKeyboardButton("UPDATES", url="https://t.me/SN_Telegram_bots_Stores")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            try:
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=START_IMAGE_URL,
+                    caption=welcome_text,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Failed to send welcome photo to {chat_id}: {e}. Sending text.")
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=welcome_text,
+                    reply_markup=reply_markup,
+                    parse_mode="HTML"
+                )
+# --- END NEW FUNCTION ---
+
 
 async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Allows users to register directly in the group."""
@@ -216,7 +254,9 @@ def main():
     # --- END NEW ---
     
     # Passive Handlers
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMERS, on_new_chat_members))
+    # --- THIS IS THE FIX: MEMERS -> MEMBERS ---
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_chat_members))
+    # -------------------------------------
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & (~filters.COMMAND) & (~filters.StatusUpdate.NEW_CHAT_MEMBERS), akatsuki_event.passive_group_register), group=-1)
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & filters.ChatType.GROUPS, chat_rewards.on_chat_message), group=10)
 
