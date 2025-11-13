@@ -1,5 +1,6 @@
 import logging
 import uuid
+import random # <-- NEW IMPORT
 from html import escape
 from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ContextTypes
@@ -8,6 +9,11 @@ import database as db
 import game_logic as gl
 
 logger = logging.getLogger(__name__)
+
+# --- NEW: Gamble Constants ---
+BET_AMOUNT = 50
+BET_WIN_CHANCE = 0.40 # 40% chance to win
+BET_WIN_MULTIPLIER = 2.5 # Win 125 Ryo (50 bet + 75 profit)
 
 def get_wallet_text(player):
     """Generates the HTML text for a player's wallet card."""
@@ -32,7 +38,6 @@ def get_top_killers_text():
     else:
         for i, p in enumerate(top_players):
             rank = ["🥇", "🥈", "🥉"][i] if i < 3 else f"<b>{i+1}.</b>"
-            # Use escape to be safe, but a "mention" is better for flexing
             mention = f'<a href="tg://user?id={p["user_id"]}">{escape(p["username"])}</a>'
             text += f"{rank} {mention} - {p['kills']} Kills\n"
     return text
@@ -93,16 +98,63 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 input_message_content=InputTextMessageContent(rich_text, parse_mode="HTML")
             )
         )
+        
+        # --- 4. NEW: Gamble 50 Ryo ---
+        gamble_title = f"🎲 Gamble {BET_AMOUNT} Ryo!"
+        gamble_desc = "40% chance to win 125 Ryo!"
+        
+        is_hosp, _ = gl.get_hospital_status(player)
+        if is_hosp:
+            gamble_title = "❌ Cannot gamble while hospitalized"
+            gamble_desc = "Use /heal in a group to recover."
+        elif player['ryo'] < BET_AMOUNT:
+            gamble_title = f"❌ Not enough Ryo (Need {BET_AMOUNT})"
+            gamble_desc = "Go rob someone or do missions!"
+
+        # --- This is the game logic. It runs BEFORE they click! ---
+        if player['ryo'] >= BET_AMOUNT and not is_hosp:
+            win_amount = int(BET_AMOUNT * BET_WIN_MULTIPLIER)
+            
+            if random.random() < BET_WIN_CHANCE:
+                # --- WIN ---
+                new_ryo = player['ryo'] + (win_amount - BET_AMOUNT)
+                db.update_player(user_id, {'ryo': new_ryo})
+                gamble_result_text = f"🎲 **JACKPOT!** 🎲\n{escape(player['username'])} just gambled {BET_AMOUNT} Ryo and **won {win_amount} Ryo**!"
+            else:
+                # --- LOSE ---
+                new_ryo = player['ryo'] - BET_AMOUNT
+                db.update_player(user_id, {'ryo': new_ryo})
+                gamble_result_text = f"🎲 **Better luck next time...**\n{escape(player['username'])} gambled {BET_AMOUNT} Ryo and **lost it all**."
+                
+            results.append(
+                InlineQueryResultArticle(
+                    id="gamble",
+                    title=gamble_title,
+                    description=gamble_desc,
+                    input_message_content=InputTextMessageContent(gamble_result_text, parse_mode="HTML")
+                )
+            )
+        else:
+            # Show a greyed-out, unclickable result
+            results.append(
+                InlineQueryResultArticle(
+                    id="gamble_fail",
+                    title=gamble_title,
+                    description=gamble_desc,
+                    input_message_content=InputTextMessageContent(f"I can't gamble right now. (Need {BET_AMOUNT} Ryo and must be healthy)")
+                )
+            )
+        # --- END NEW ---
+            
     else:
         # --- Not registered ---
         results.append(
             InlineQueryResultArticle(
-                id=str(uuid.uuid4()),
+                id="register",
                 title="❌ You are not registered!",
                 description="Click here to ask how to join.",
                 input_message_content=InputTextMessageContent(f"Hey everyone, how do I /register for @{context.bot.username}?")
             )
         )
 
-    # Answer the query with the list of results
-    await query.answer(results, cache_time=10) # 10 second cache
+    await query.answer(results, cache_time=5) # 5 second cache so game is fresh
