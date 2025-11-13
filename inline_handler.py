@@ -1,6 +1,7 @@
 import logging
 import uuid
-import random # <-- NEW IMPORT
+import random
+import datetime # <-- NEW IMPORT
 from html import escape
 from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ContextTypes
@@ -10,10 +11,12 @@ import game_logic as gl
 
 logger = logging.getLogger(__name__)
 
-# --- NEW: Gamble Constants ---
-BET_AMOUNT = 50
-BET_WIN_CHANCE = 0.40 # 40% chance to win
-BET_WIN_MULTIPLIER = 2.5 # Win 125 Ryo (50 bet + 75 profit)
+# --- NEW: Daily Pack Constants ---
+PACK_COMMON_CHANCE = 0.70 # 70%
+PACK_UNCOMMON_CHANCE = 0.20 # 20%
+PACK_RARE_CHANCE = 0.08 # 8%
+# Legendary is the remaining 2%
+# ------------------------------
 
 def get_wallet_text(player):
     """Generates the HTML text for a player's wallet card."""
@@ -54,6 +57,61 @@ def get_top_rich_text():
             mention = f'<a href="tg://user?id={p["user_id"]}">{escape(p["username"])}</a>'
             text += f"{rank} {mention} - {p['ryo']:,} Ryo\n"
     return text
+
+# --- NEW HELPER FUNCTION ---
+def get_daily_pack_prize(player):
+    """
+    Calculates a random prize for the daily pack.
+    Returns (prize_text, updates_dict)
+    """
+    roll = random.random()
+    
+    if roll < PACK_COMMON_CHANCE:
+        # Common: 50-100 Ryo
+        prize_ryo = random.randint(50, 100)
+        prize_text = f"💰 **{prize_ryo} Ryo**"
+        updates = {'ryo': player['ryo'] + prize_ryo}
+        return prize_text, updates
+        
+    elif roll < PACK_COMMON_CHANCE + PACK_UNCOMMON_CHANCE:
+        # Uncommon: 150-250 Ryo
+        prize_ryo = random.randint(150, 250)
+        prize_text = f"💰💰 **{prize_ryo} Ryo**"
+        updates = {'ryo': player['ryo'] + prize_ryo}
+        return prize_text, updates
+        
+    elif roll < PACK_COMMON_CHANCE + PACK_UNCOMMON_CHANCE + PACK_RARE_CHANCE:
+        # Rare: A random pill
+        pill = random.choice(['health_potion', 'chakra_pill'])
+        prize_text = f"🧪 **1x {gl.SHOP_INVENTORY[pill]['name']}**"
+        
+        inventory = player.get('inventory') or []
+        # Handle if inventory is string (old data) or list
+        if isinstance(inventory, str):
+            try:
+                inventory = json.loads(inventory)
+                if not isinstance(inventory, list): inventory = []
+            except:
+                inventory = []
+                
+        inventory.append(pill)
+        updates = {'inventory': inventory}
+        return prize_text, updates
+        
+    else:
+        # Legendary: 500 Ryo + 100 EXP
+        prize_ryo = 500
+        prize_exp = 100
+        prize_text = f"🎉 **LEGENDARY!** {prize_ryo} Ryo and {prize_exp} EXP!"
+        updates = {
+            'ryo': player['ryo'] + prize_ryo,
+            'exp': player['exp'] + prize_exp,
+            'total_exp': player['total_exp'] + prize_exp
+        }
+        # We can even check for level up here if we want, but let's keep it simple
+        return prize_text, updates
+# --- END NEW HELPER ---
+
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles all inline queries (@BotName ...)."""
@@ -99,49 +157,51 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         )
         
-        # --- 4. NEW: Gamble 50 Ryo ---
-        gamble_title = f"🎲 Gamble {BET_AMOUNT} Ryo!"
-        gamble_desc = "40% chance to win 125 Ryo!"
+        # --- 4. REPLACED: Daily Shinobi Pack ---
+        today = datetime.date.today()
+        last_claim = player.get('last_inline_game_date')
         
-        is_hosp, _ = gl.get_hospital_status(player)
-        if is_hosp:
-            gamble_title = "❌ Cannot gamble while hospitalized"
-            gamble_desc = "Use /heal in a group to recover."
-        elif player['ryo'] < BET_AMOUNT:
-            gamble_title = f"❌ Not enough Ryo (Need {BET_AMOUNT})"
-            gamble_desc = "Go rob someone or do missions!"
+        # Convert from DB string if needed
+        if isinstance(last_claim, str):
+            try:
+                last_claim = datetime.date.fromisoformat(last_claim)
+            except ValueError:
+                last_claim = None # Handle bad data
 
-        # --- This is the game logic. It runs BEFORE they click! ---
-        if player['ryo'] >= BET_AMOUNT and not is_hosp:
-            win_amount = int(BET_AMOUNT * BET_WIN_MULTIPLIER)
-            
-            if random.random() < BET_WIN_CHANCE:
-                # --- WIN ---
-                new_ryo = player['ryo'] + (win_amount - BET_AMOUNT)
-                db.update_player(user_id, {'ryo': new_ryo})
-                gamble_result_text = f"🎲 **JACKPOT!** 🎲\n{escape(player['username'])} just gambled {BET_AMOUNT} Ryo and **won {win_amount} Ryo**!"
-            else:
-                # --- LOSE ---
-                new_ryo = player['ryo'] - BET_AMOUNT
-                db.update_player(user_id, {'ryo': new_ryo})
-                gamble_result_text = f"🎲 **Better luck next time...**\n{escape(player['username'])} gambled {BET_AMOUNT} Ryo and **lost it all**."
-                
+        if last_claim == today:
+            # --- Already claimed ---
             results.append(
                 InlineQueryResultArticle(
-                    id="gamble",
-                    title=gamble_title,
-                    description=gamble_desc,
-                    input_message_content=InputTextMessageContent(gamble_result_text, parse_mode="HTML")
+                    id="daily_pack_claimed",
+                    title="❌ Daily Pack Already Claimed",
+                    description="Come back tomorrow for your next free pack!",
+                    input_message_content=InputTextMessageContent(
+                        f"{escape(player['username'])} is patiently waiting for their next daily pack."
+                    )
                 )
             )
         else:
-            # Show a greyed-out, unclickable result
+            # --- Not claimed yet! ---
+            
+            # 1. Determine the prize
+            prize_text, prize_updates = get_daily_pack_prize(player)
+            
+            # 2. Add the "claimed" timestamp to the updates
+            prize_updates['last_inline_game_date'] = today
+            
+            # 3. Save to database
+            db.update_player(user_id, prize_updates)
+            
+            # 4. Create the result
             results.append(
                 InlineQueryResultArticle(
-                    id="gamble_fail",
-                    title=gamble_title,
-                    description=gamble_desc,
-                    input_message_content=InputTextMessageContent(f"I can't gamble right now. (Need {BET_AMOUNT} Ryo and must be healthy)")
+                    id="daily_pack_claim",
+                    title="🎒 Open your Daily Shinobi Pack!",
+                    description="Click to see what you got!",
+                    input_message_content=InputTextMessageContent(
+                        f"🎉 **{escape(player['username'])} opened their Daily Shinobi Pack and found...**\n\n{prize_text}!",
+                        parse_mode="HTML"
+                    )
                 )
             )
         # --- END NEW ---
