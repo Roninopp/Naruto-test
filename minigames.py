@@ -14,10 +14,7 @@ logger = logging.getLogger(__name__)
 
 # --- Constants ---
 STEAL_CHAKRA_COST = 15 
-STEAL_BASE_SUCCESS_CHANCE = 0.60
-STEAL_BASE_FAIL_CHANCE = 0.10
-STEAL_FAIL_PENALTY = 20
-STEAL_MAX_ROB_AMOUNT = 100 # <-- NEW: Max Ryo you can try to rob
+STEAL_BASE_SUCCESS_CHANCE = 0.60; STEAL_BASE_FAIL_CHANCE = 0.10; STEAL_BASE_AMOUNT = 30; STEAL_MAX_AMOUNT = 100; STEAL_FAIL_PENALTY = 20
 SCOUT_COOLDOWN_MINUTES = 60; SCOUT_EXP_CHANCE = 0.05; SCOUT_RYO_CHANCE = 0.25; SCOUT_EXP_REWARD = 50; SCOUT_RYO_REWARD = 25
 GIFT_TAX_PERCENT = 0.05; PROTECT_1D_COST = 500; PROTECT_3D_COST = 1300
 KILL_CHAKRA_COST = 30; KILL_RYO_REWARD = 100; KILL_EXP_REWARD = 140; KILL_BASE_SUCCESS = 0.50; HOSPITAL_DURATION_HOURS = 24; HEAL_COST = 300
@@ -31,25 +28,21 @@ async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text, p
 async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Shows your wallet, or the wallet of the user you reply to."""
     user = update.effective_user
-    target_user = user # Default to self
+    target_user = user
     
-    # --- NEW: Check for reply ---
     if update.message.reply_to_message:
         target_user = update.message.reply_to_message.from_user
         if target_user.is_bot:
             await safe_reply(update, context, "Bots don't have wallets!"); return
-    # --- END NEW ---
 
     player = db.get_player(target_user.id)
     
-    # --- NEW: Smarter error message ---
     if not player:
         if target_user.id == user.id:
             await safe_reply(update, context, f"Hey {user.mention_html()}! Please /register first.", parse_mode="HTML")
         else:
             await safe_reply(update, context, f"<b>{escape(target_user.first_name)}</b> is not registered.", parse_mode="HTML")
         return
-    # --- END NEW ---
 
     is_hosp, _ = gl.get_hospital_status(player)
     status_text = "🏥 Hospitalized" if is_hosp else "❤️ Alive"
@@ -71,7 +64,6 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     victim_user = update.message.reply_to_message.from_user
     if victim_user.id == user.id or victim_user.is_bot: await safe_reply(update, context, "Invalid target."); return
 
-    # --- NEW: Parse Amount ---
     try:
         amount_to_steal = int(context.args[0])
     except (IndexError, ValueError):
@@ -81,7 +73,6 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_reply(update, context, f"You can only rob a maximum of **{STEAL_MAX_ROB_AMOUNT} Ryo** at a time.", parse_mode="HTML"); return
     if amount_to_steal <= 0:
         await safe_reply(update, context, "You must rob a positive amount."); return
-    # --- END NEW ---
 
     stealer = db.get_player(user.id); victim = db.get_player(victim_user.id)
     if not stealer: await safe_reply(update, context, f"{user.mention_html()}, please /register first!", parse_mode="HTML"); return
@@ -90,10 +81,8 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_hospitalized, remaining = gl.get_hospital_status(stealer)
     if is_hospitalized: await safe_reply(update, context, f"🏥 You are in the hospital! Wait {remaining/60:.0f}m or use /heal."); return
 
-    # --- NEW: Check if victim has enough money ---
     if victim['ryo'] < amount_to_steal:
         await safe_reply(update, context, f"<b>{escape(victim_user.first_name)}</b> doesn't have that much Ryo! (They have {victim['ryo']} Ryo).", parse_mode="HTML"); return
-    # ---------------------------------------------
         
     now = datetime.datetime.now(datetime.timezone.utc)
     if victim.get('protection_until'):
@@ -112,11 +101,21 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if roll < success_chance:
         # --- SUCCESS ---
-        # final_steal is now the amount they specified
         stealer_updates['ryo'] = stealer['ryo'] + amount_to_steal
         db.update_player(user.id, stealer_updates)
         db.update_player(victim_user.id, {'ryo': victim['ryo'] - amount_to_steal})
-        await safe_reply(update, context, f"✅ **Success!** Stole **{amount_to_steal} Ryo** from {victim['username']}!", parse_mode="HTML")
+        
+        # --- NEW: Random Success Messages ---
+        victim_name = escape(victim_user.first_name)
+        success_messages = [
+            f"✅ **Success!** You used a classic substitution jutsu and swiped **{amount_to_steal} Ryo** from **{victim_name}**!",
+            f"✅ **Perfect Stealth!** You slipped past **{victim_name}**'s defenses and took **{amount_to_steal} Ryo**!",
+            f"✅ **Gotcha!** You pickpocketed **{victim_name}** while they weren't looking. You got **{amount_to_steal} Ryo**!",
+            f"✅ **Too Easy!** You stole **{amount_to_steal} Ryo** from **{victim_name}**. They'll never see it coming!"
+        ]
+        await safe_reply(update, context, random.choice(success_messages), parse_mode="HTML")
+        # --- END NEW ---
+        
     elif roll < (success_chance + fail_chance):
         # --- FAIL ---
         lose = min(stealer['ryo'], STEAL_FAIL_PENALTY)
