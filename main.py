@@ -19,7 +19,7 @@ from telegram.ext import (
     JobQueue,
     MessageHandler, 
     filters,
-    InlineQueryHandler # <-- IMPORT
+    InlineQueryHandler
 )
 from telegram.ext import ChatMemberHandler
 from telegram.constants import ChatType
@@ -43,10 +43,10 @@ import minigames
 import leaderboard 
 import chat_rewards
 import daily 
-import inline_handler # <-- IMPORT
+import inline_handler
 
 # --- Constants ---
-BOT_TOKEN = "7307409890:AAERVuaVSOOOLGv_anuULfQR_MRPRSvLt_U" # Your Test Bot Token
+BOT_TOKEN = "8280105345:AAHJY49dOD-YCjasJZ1RoDJ6mtblnndXsyI"
 START_IMAGE_URL = "https://envs.sh/r6z.jpg" 
 
 # --- Welcome Message Function ---
@@ -93,7 +93,6 @@ async def on_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE
                     reply_markup=reply_markup,
                     parse_mode="HTML"
                 )
-# --- END NEW FUNCTION ---
 
 
 async def register_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -154,33 +153,62 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(welcome_text, parse_mode="HTML", reply_markup=reply_markup)
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user; player = db.get_player(user.id)
-    if not player: await update.message.reply_text(f"{user.mention_html()}, please /register first!", parse_mode="HTML"); return
+    user = update.effective_user
+    player = db.get_player(user.id)
     
-    raw_eq = player.get('equipment')
-    if isinstance(raw_eq, str):
-        try: player_equipment = json.loads(raw_eq)
-        except: player_equipment = {}
-    elif isinstance(raw_eq, dict):
-        player_equipment = raw_eq
-    else:
-        player_equipment = {}
+    if not player:
+        await update.message.reply_text(f"{user.mention_html()}, please /register first!", parse_mode="HTML")
+        return
+    
+    # ✅ FIX: Equipment is already a dict from JSONB, no need for json.loads
+    player_equipment = player.get('equipment') or {}
 
-    stats = gl.get_total_stats(player); eq = player_equipment
+    stats = gl.get_total_stats(player)
+    eq = player_equipment
     eq_text = "\n".join([f"<b>{s.title()}:</b> {gl.SHOP_INVENTORY[eq[s]]['name'] if eq.get(s) else 'None'}" for s in ['weapon','armor','accessory']])
-    txt = (f"--- 👤 NINJA PROFILE 👤 ---\n<b>Name:</b> {player['username']}\n<b>Village:</b> {player['village']}\n<b>Rank:</b> {player['rank']}\n<b>Level:</b> {player['level']}\n<b>EXP:</b> {player['exp']} / {gl.get_exp_for_next_level(player['level'])}\n<b>Ryo:</b> {player['ryo']} 💰\n\n<b>HP:</b> {gl.health_bar(player['current_hp'], stats['max_hp'])}\n<b>Chakra:</b> {gl.chakra_bar(player['current_chakra'], stats['max_chakra'])}\n\n--- STATS ---\n<b>Str:</b> {stats['strength']}\n<b>Spd:</b> {stats['speed']}\n<b>Int:</b> {stats['intelligence']}\n<b>Stam:</b> {stats['stamina']}\n\n--- EQUIPMENT ---\n{eq_text}\n<b>Wins:</b> {player['wins']} | <b>Losses:</b> {player['losses']}\n<b>Kills:</b> {player.get('kills', 0)} ☠️")
+    
+    txt = (
+        f"--- 👤 NINJA PROFILE 👤 ---\n"
+        f"<b>Name:</b> {player['username']}\n"
+        f"<b>Village:</b> {player['village']}\n"
+        f"<b>Rank:</b> {player['rank']}\n"
+        f"<b>Level:</b> {player['level']}\n"
+        f"<b>EXP:</b> {player['exp']} / {gl.get_exp_for_next_level(player['level'])}\n"
+        f"<b>Ryo:</b> {player['ryo']} 💰\n\n"
+        f"<b>HP:</b> {gl.health_bar(player['current_hp'], stats['max_hp'])}\n"
+        f"<b>Chakra:</b> {gl.chakra_bar(player['current_chakra'], stats['max_chakra'])}\n\n"
+        f"--- STATS ---\n"
+        f"<b>Str:</b> {stats['strength']}\n"
+        f"<b>Spd:</b> {stats['speed']}\n"
+        f"<b>Int:</b> {stats['intelligence']}\n"
+        f"<b>Stam:</b> {stats['stamina']}\n\n"
+        f"--- EQUIPMENT ---\n{eq_text}\n"
+        f"<b>Wins:</b> {player['wins']} | <b>Losses:</b> {player['losses']}\n"
+        f"<b>Kills:</b> {player.get('kills', 0)} ☠️"
+    )
+    
     await update.message.reply_text(txt, parse_mode="HTML")
 
 async def village_selection_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query; await query.answer(); user = query.from_user
-    if db.get_player(user.id): await query.edit_message_caption(caption=f"{user.mention_html()}, you are already registered!", parse_mode="HTML"); return
-    v_key = query.data.split('_')[1]; v_name = gl.VILLAGES[v_key]
+    query = update.callback_query
+    await query.answer()
+    user = query.from_user
+    
+    if db.get_player(user.id):
+        await query.edit_message_caption(caption=f"{user.mention_html()}, you are already registered!", parse_mode="HTML")
+        return
+    
+    v_key = query.data.split('_')[1]
+    v_name = gl.VILLAGES[v_key]
+    
     if db.create_player(user.id, user.username or user.first_name, v_name):
         kb = [[InlineKeyboardButton("❓ Help", callback_data="show_main_help")], [InlineKeyboardButton("UPDATES", url="https://t.me/SN_Telegram_bots_Stores")]]
         await query.edit_message_caption(caption=f"🎉 **Registration Complete!** 🎉\n\n{user.mention_html()} has joined **{v_name}**!\nYour ninja journey begins now. Use /profile.", parse_mode="HTML", reply_markup=InlineKeyboardMarkup(kb))
 
 def main():
-    logger.info("Starting bot..."); db.create_tables(); db.update_schema()
+    logger.info("Starting bot...")
+    db.create_tables()
+    db.update_schema()
     app = Application.builder().token(BOT_TOKEN).build()
 
     # Core
@@ -249,14 +277,12 @@ def main():
     app.add_handler(CommandHandler(("auto_fight_off", "auto_Ryo_Off"), akatsuki_event.toggle_auto_fight_command))
     app.add_handler(CommandHandler("auto_fight_on", akatsuki_event.toggle_auto_fight_command))
     
-    # --- NEW: INLINE HANDLER ---
+    # Inline Handler
     app.add_handler(InlineQueryHandler(inline_handler.inline_query_handler))
-    # --- END NEW ---
     
-    # Passive Handlers
-    # --- THIS IS THE FIX: MEMERS -> MEMBERS ---
+    # ✅ FIX: MEMERS → MEMBERS
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_chat_members))
-    # -------------------------------------
+    
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & (~filters.COMMAND) & (~filters.StatusUpdate.NEW_CHAT_MEMBERS), akatsuki_event.passive_group_register), group=-1)
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & filters.ChatType.GROUPS, chat_rewards.on_chat_message), group=10)
 
@@ -270,9 +296,9 @@ def main():
     if app.job_queue:
         app.job_queue.run_repeating(world_boss.spawn_world_boss, interval=3600, first=10)
         logger.info("World Boss spawn job scheduled (1 hour).")
-        # Akatsuki job is removed
 
-    logger.info("Bot is polling..."); app.run_polling()
+    logger.info("Bot is polling...")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
