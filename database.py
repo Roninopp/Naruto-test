@@ -61,7 +61,8 @@ def create_tables():
             daily_mission_count INTEGER DEFAULT 0, last_mission_reset_date DATE DEFAULT NULL,
             last_daily_claim DATE DEFAULT NULL, protection_until TIMESTAMP DEFAULT NULL,
             hospitalized_until TIMESTAMP DEFAULT NULL, hospitalized_by BIGINT DEFAULT NULL, kills INTEGER DEFAULT 0,
-            last_inline_game_date DATE DEFAULT NULL
+            last_inline_game_date DATE DEFAULT NULL,
+            inline_pack_cooldown TIMESTAMP DEFAULT NULL
         );
         """,
         """CREATE TABLE IF NOT EXISTS jutsu_discoveries (id SERIAL PRIMARY KEY, combination TEXT UNIQUE, jutsu_name TEXT, discovered_by TEXT, discovered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);""",
@@ -99,7 +100,8 @@ def update_schema():
             ('daily_mission_count', 'INTEGER DEFAULT 0'), ('last_mission_reset_date', 'DATE DEFAULT NULL'),
             ('last_daily_claim', 'DATE DEFAULT NULL'), ('protection_until', 'TIMESTAMP DEFAULT NULL'),
             ('hospitalized_until', 'TIMESTAMP DEFAULT NULL'), ('hospitalized_by', 'BIGINT DEFAULT NULL'), ('kills', 'INTEGER DEFAULT 0'),
-            ('last_inline_game_date', 'DATE DEFAULT NULL')
+            ('last_inline_game_date', 'DATE DEFAULT NULL'),
+            ('inline_pack_cooldown', 'TIMESTAMP DEFAULT NULL')
         ]
     }
     try:
@@ -122,13 +124,13 @@ def update_schema():
 def get_player(user_id):
     cp = cache.get_player_cache(user_id)
     if cp:
-        for k in ['battle_cooldown','boss_attack_cooldown','steal_cooldown','scout_cooldown','assassinate_cooldown','protection_until','hospitalized_until','created_at']:
+        for k in ['battle_cooldown','boss_attack_cooldown','steal_cooldown','scout_cooldown','assassinate_cooldown','protection_until','hospitalized_until','created_at', 'inline_pack_cooldown']:
             if cp.get(k): 
                 try:
                     cp[k] = datetime.datetime.fromisoformat(cp[k])
                 except:
                     pass
-        for k in ['last_train_reset_date','last_mission_reset_date','last_daily_claim','last_inline_game_date']:
+        for k in ['last_train_reset_date','last_mission_reset_date','last_daily_claim', 'last_inline_game_date']:
              if cp.get(k):
                  try:
                      cp[k] = datetime.date.fromisoformat(cp[k])
@@ -156,10 +158,10 @@ def create_player(user_id, username, village):
     conn = get_db_connection()
     if not conn: return False
     s = gl.distribute_stats({'strength':10,'speed':10,'intelligence':10,'stamina':10}, 0)
-    sql = """INSERT INTO players (user_id, username, village, max_hp, current_hp, max_chakra, current_chakra, strength, speed, intelligence, stamina, equipment, inventory, daily_train_count, last_train_reset_date, boss_attack_cooldown, story_progress, akatsuki_cooldown, known_jutsus, discovered_combinations, steal_cooldown, scout_cooldown, assassinate_cooldown, daily_mission_count, last_mission_reset_date, last_daily_claim, protection_until, hospitalized_until, hospitalized_by, kills, last_inline_game_date) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+    sql = """INSERT INTO players (user_id, username, village, max_hp, current_hp, max_chakra, current_chakra, strength, speed, intelligence, stamina, equipment, inventory, daily_train_count, last_train_reset_date, boss_attack_cooldown, story_progress, akatsuki_cooldown, known_jutsus, discovered_combinations, steal_cooldown, scout_cooldown, assassinate_cooldown, daily_mission_count, last_mission_reset_date, last_daily_claim, protection_until, hospitalized_until, hospitalized_by, kills, last_inline_game_date, inline_pack_cooldown) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
     try:
         with conn.cursor() as c:
-            c.execute(sql, (user_id, username, village, s['max_hp'], s['max_hp'], s['max_chakra'], s['max_chakra'], s['strength'], s['speed'], s['intelligence'], s['stamina'], '{}', '[]', 0, None, None, 0, None, '[]', '[]', None, None, None, 0, None, None, None, None, None, 0, None))
+            c.execute(sql, (user_id, username, village, s['max_hp'], s['max_hp'], s['max_chakra'], s['max_chakra'], s['strength'], s['speed'], s['intelligence'], s['stamina'], '{}', '[]', 0, None, None, 0, None, '[]', '[]', None, None, None, 0, None, None, None, None, None, 0, None, None))
         conn.commit()
         logger.info(f"New player created: {username} (ID: {user_id})")
         cache.clear_player_cache(user_id)
@@ -190,6 +192,41 @@ def update_player(user_id, updates):
         return True
     except Exception as e:
         logger.error(f"Update player error: {e}")
+        conn.rollback()
+        return False
+    finally:
+        put_db_connection(conn)
+
+# ✅ NEW: ATOMIC RYO OPERATIONS (Prevents race conditions)
+def atomic_add_ryo(user_id, amount):
+    """Atomically adds (or subtracts if negative) Ryo to a player's balance."""
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        with conn.cursor() as c:
+            c.execute("UPDATE players SET ryo = ryo + %s WHERE user_id = %s", (amount, user_id))
+        conn.commit()
+        cache.clear_player_cache(user_id)
+        return True
+    except Exception as e:
+        logger.error(f"Atomic ryo update error for {user_id}: {e}")
+        conn.rollback()
+        return False
+    finally:
+        put_db_connection(conn)
+
+def atomic_add_exp(user_id, amount):
+    """Atomically adds EXP and total_exp to a player."""
+    conn = get_db_connection()
+    if not conn: return False
+    try:
+        with conn.cursor() as c:
+            c.execute("UPDATE players SET exp = exp + %s, total_exp = total_exp + %s WHERE user_id = %s", (amount, amount, user_id))
+        conn.commit()
+        cache.clear_player_cache(user_id)
+        return True
+    except Exception as e:
+        logger.error(f"Atomic exp update error for {user_id}: {e}")
         conn.rollback()
         return False
     finally:
