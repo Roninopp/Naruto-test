@@ -168,6 +168,8 @@ def get_daily_pack_prize(player):
 
     return result_text, updates
 
+# 🆕 EPIC NARUTO GAME FUNCTIONS
+
 def play_shadow_clone_training(player, difficulty):
     """Train with shadow clones at different difficulty levels."""
     training = CLONE_TRAINING[difficulty]
@@ -389,6 +391,7 @@ def play_tailed_beast_encounter(player):
     
     return result_text, updates, beast['image']
 
+
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles all inline queries (@BotName ...)."""
     query = update.inline_query
@@ -402,6 +405,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if player:
         is_hosp, _ = gl.get_hospital_status(player)
         
+        # --- 1. Show My Wallet ---
         wallet_text = get_wallet_text(player)
         results.append(
             InlineQueryResultArticle(
@@ -412,6 +416,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         )
         
+        # --- 2. Show Top Killers ---
         killers_text = get_top_killers_text()
         results.append(
             InlineQueryResultArticle(
@@ -422,6 +427,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         )
         
+        # --- 3. Show Top Richest ---
         rich_text = get_top_rich_text()
         results.append(
             InlineQueryResultArticle(
@@ -432,6 +438,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         )
         
+        # --- 4. Daily Shinobi Pack ---
         now = datetime.datetime.now(timezone.utc)
         last_claim_time = player.get('inline_pack_cooldown')
         
@@ -472,6 +479,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
             )
         
+        # 🆕 EPIC NARUTO GAMES START HERE
+        
         if is_hosp:
             results.append(
                 InlineQueryResultArticle(
@@ -482,6 +491,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
             )
         else:
+            # --- 5. Shadow Clone Training (4 difficulties) ---
             if player['ryo'] >= CLONE_COST:
                 for diff_key, diff_data in CLONE_TRAINING.items():
                     result_text, updates = play_shadow_clone_training(player, diff_key)
@@ -495,6 +505,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         )
                     )
             
+            # --- 6. Ninja Battle (3 characters) ---
             if player['ryo'] >= BATTLE_COST:
                 for char_key, char_data in BATTLE_CHARACTERS.items():
                     result_text, updates, image = play_ninja_battle(player, char_key)
@@ -511,6 +522,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         )
                     )
             
+            # --- 7. Akatsuki Encounters (4 members) ---
             if player['ryo'] >= AKATSUKI_COST:
                 for member_key, member_data in AKATSUKI_MEMBERS.items():
                     result_text, updates, image = play_akatsuki_encounter(player, member_key)
@@ -527,6 +539,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         )
                     )
             
+            # --- 8. Summoning Jutsu ---
             if player['ryo'] >= SUMMON_COST:
                 result_text, updates, image = play_summoning_jutsu(player)
                 db.update_player(user_id, updates)
@@ -553,6 +566,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         )
                     )
             
+            # --- 9. Chunin Exam (3 stages) ---
             if player['ryo'] >= CHUNIN_COST:
                 for stage_key, stage_data in CHUNIN_STAGES.items():
                     result_text, updates = play_chunin_exam(player, stage_key)
@@ -566,6 +580,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         )
                     )
             
+            # --- 10. Tailed Beast Encounter ---
             if player['ryo'] >= TAILED_BEAST_COST:
                 result_text, updates, image = play_tailed_beast_encounter(player)
                 db.update_player(user_id, updates)
@@ -582,6 +597,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
             
     else:
+        # --- Not registered ---
         results.append(
             InlineQueryResultArticle(
                 id="register",
@@ -593,4 +609,5 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         )
 
+    # cache_time=0 is important for games
     await query.answer(results, cache_time=0)
