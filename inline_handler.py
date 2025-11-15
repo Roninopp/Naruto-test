@@ -4,15 +4,15 @@ import random
 import datetime
 from datetime import timezone
 from html import escape
-from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, InlineQueryResultPhoto
-from telegram.ext import ContextTypes
+from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.ext import ContextTypes, CallbackQueryHandler
 
 import database as db
 import game_logic as gl
 
 logger = logging.getLogger(__name__)
 
-# --- Daily Pack Loot Table ---
+# --- Daily Pack ---
 PACK_LOOT_TABLE = [
     (100, 'ryo', 'ryo', 50, "Common Ryo Pouch"),
     (100, 'ryo', 'ryo', 75, "Common Ryo Pouch"),
@@ -22,53 +22,78 @@ PACK_LOOT_TABLE = [
     (5,   'item', 'soldier_pill', 1, "Soldier Pill"),
     (1,   'exp', 'exp', 100, "Legendary EXP Scroll")
 ]
-
 PACK_COOLDOWN_HOURS = 4
 
-# 🆕 EPIC NARUTO GAME CONSTANTS
-CLONE_COST = 80
-CLONE_TRAINING = {
-    'beginner': {'success': 0.30, 'reward': 250, 'name': 'Beginner (30%)'},
-    'intermediate': {'success': 0.20, 'reward': 500, 'name': 'Intermediate (20%)'},
-    'advanced': {'success': 0.10, 'reward': 1000, 'name': 'Advanced (10%)'},
-    'forbidden': {'success': 0.05, 'reward': 2500, 'name': 'Forbidden (5%)'}
-}
-
-BATTLE_COST = 100
-BATTLE_CHARACTERS = {
-    'naruto': {
-        'name': 'Naruto Uzumaki',
-        'image': 'https://i.imgur.com/YqN7xQs.jpg',
-        'strength': 'Taijutsu',
-        'weakness': 'Genjutsu',
-        'special': 'Rasengan'
+# 🎮 INTERACTIVE GAME ENEMIES
+GAME_ENEMIES = {
+    'zabuza': {
+        'name': 'Zabuza Momochi',
+        'image': '⚔️',
+        'hp': 100,
+        'attacks': {
+            'water_dragon': {'name': 'Water Dragon', 'power': 40, 'weak_to': ['lightning'], 'strong_vs': ['fire']},
+            'hidden_mist': {'name': 'Hidden Mist', 'power': 30, 'weak_to': ['wind'], 'strong_vs': ['none']}
+        },
+        'weakness': 'lightning',
+        'reward': 200
     },
-    'sasuke': {
-        'name': 'Sasuke Uchiha', 
-        'image': 'https://i.imgur.com/8kFvZOh.jpg',
-        'strength': 'Ninjutsu',
-        'weakness': 'Taijutsu',
-        'special': 'Chidori'
+    'sound_ninja': {
+        'name': 'Sound Ninja Quartet',
+        'image': '🎵',
+        'hp': 80,
+        'attacks': {
+            'sound_wave': {'name': 'Sound Wave', 'power': 25, 'weak_to': ['none'], 'strong_vs': ['none']},
+            'curse_mark': {'name': 'Curse Mark', 'power': 35, 'weak_to': ['medical'], 'strong_vs': ['taijutsu']}
+        },
+        'weakness': 'genjutsu',
+        'reward': 150
     },
-    'sakura': {
-        'name': 'Sakura Haruno',
-        'image': 'https://i.imgur.com/nYvR7pQ.jpg',
-        'strength': 'Genjutsu',
-        'weakness': 'Ninjutsu',
-        'special': 'Chakra Punch'
+    'itachi': {
+        'name': 'Itachi Uchiha',
+        'image': '🔴',
+        'hp': 150,
+        'attacks': {
+            'amaterasu': {'name': 'Amaterasu', 'power': 60, 'weak_to': ['wind'], 'strong_vs': ['water']},
+            'tsukuyomi': {'name': 'Tsukuyomi', 'power': 50, 'weak_to': ['sharingan'], 'strong_vs': ['genjutsu']}
+        },
+        'weakness': 'none',
+        'reward': 500
+    },
+    'orochimaru': {
+        'name': 'Orochimaru',
+        'image': '🐍',
+        'hp': 120,
+        'attacks': {
+            'snake_summon': {'name': 'Giant Snakes', 'power': 45, 'weak_to': ['fire'], 'strong_vs': ['earth']},
+            'curse_seal': {'name': 'Curse Seal', 'power': 40, 'weak_to': ['medical'], 'strong_vs': ['none']}
+        },
+        'weakness': 'medical',
+        'reward': 300
+    },
+    'akatsuki_grunt': {
+        'name': 'Akatsuki Member',
+        'image': '☁️',
+        'hp': 90,
+        'attacks': {
+            'kunai_barrage': {'name': 'Kunai Barrage', 'power': 30, 'weak_to': ['none'], 'strong_vs': ['none']},
+            'explosive_tags': {'name': 'Explosive Tags', 'power': 35, 'weak_to': ['substitution'], 'strong_vs': ['taijutsu']}
+        },
+        'weakness': 'ninjutsu',
+        'reward': 180
     }
 }
 
-AKATSUKI_COST = 150
-AKATSUKI_MEMBERS = {
-    'itachi': {'name': 'Itachi Uchiha', 'image': 'https://i.imgur.com/4Rq5xOE.jpg', 'difficulty': 0.25, 'reward': 600},
-    'pain': {'name': 'Pain', 'image': 'https://i.imgur.com/nE6Bk2P.jpg', 'difficulty': 0.15, 'reward': 1000},
-    'madara': {'name': 'Madara Uchiha', 'image': 'https://i.imgur.com/8sN3yHD.jpg', 'difficulty': 0.08, 'reward': 1800},
+# Player Jutsu Options
+PLAYER_JUTSUS = {
+    'fireball': {'name': '🔥 Fireball Jutsu', 'type': 'fire', 'power': 35},
+    'shadow_clone': {'name': '🌀 Shadow Clone', 'type': 'ninjutsu', 'power': 30},
+    'substitution': {'name': '🍃 Substitution', 'type': 'escape', 'power': 0},  # Defensive
+    'water_dragon': {'name': '🌊 Water Dragon', 'type': 'water', 'power': 40},
+    'lightning_blade': {'name': '⚡ Lightning Blade', 'type': 'lightning', 'power': 45},
+    'rasengan': {'name': '💫 Rasengan', 'type': 'ninjutsu', 'power': 50},
+    'medical_ninjutsu': {'name': '💚 Medical Ninjutsu', 'type': 'medical', 'power': 0},  # Heal
+    'genjutsu': {'name': '👁️ Genjutsu', 'type': 'genjutsu', 'power': 35}
 }
-
-SUMMON_COST = 120
-CHUNIN_COST = 90
-TAILED_BEAST_COST = 200
 
 def get_wallet_text(player):
     is_hosp, _ = gl.get_hospital_status(player)
@@ -83,25 +108,25 @@ def get_wallet_text(player):
     )
 
 def get_top_killers_text():
-    text = "☠️ **Top 5 Deadliest Ninja** ☠️\n*(By Kills)*\n\n"
+    text = "☠️ **Top 5 Deadliest Ninja** ☠️\n\n"
     top_players = db.get_top_players_by_kills(limit=5)
     if not top_players:
         text += "No successful kills yet..."
     else:
         for i, p in enumerate(top_players):
-            rank = ["🥇", "🥈", "🥉"][i] if i < 3 else f"<b>{i+1}.</b>"
+            rank = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
             mention = f'<a href="tg://user?id={p["user_id"]}">{escape(p["username"])}</a>'
             text += f"{rank} {mention} - {p['kills']} Kills\n"
     return text
 
 def get_top_rich_text():
-    text = "💰 **Top 5 Richest Ninja** 💰\n*(By Total Ryo)*\n\n"
+    text = "💰 **Top 5 Richest Ninja** 💰\n\n"
     top_players = db.get_top_players_by_ryo(limit=5)
     if not top_players:
         text += "No one has any Ryo..."
     else:
         for i, p in enumerate(top_players):
-            rank = ["🥇", "🥈", "🥉"][i] if i < 3 else f"<b>{i+1}.</b>"
+            rank = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
             mention = f'<a href="tg://user?id={p["user_id"]}">{escape(p["username"])}</a>'
             text += f"{rank} {mention} - {p['ryo']:,} Ryo\n"
     return text
@@ -115,22 +140,22 @@ def get_daily_pack_prize(player):
 
     if p_type == 'ryo':
         updates['ryo'] = player['ryo'] + p_amount
-        result_text = f"🎁 **Daily Pack!** 🎁\n{escape(player['username'])} opened a pack!\n💰 **+{p_amount} Ryo!**"
+        result_text = f"🎁 **Daily Pack!**\n{escape(player['username'])} got **{p_name}**!\n💰 +{p_amount} Ryo!"
     elif p_type == 'item':
         inventory = player.get('inventory') or []
         inventory.append(p_key)
         updates['inventory'] = inventory
-        result_text = f"🎁 **Daily Pack!** 🎁\n{escape(player['username'])} got a **{p_name}**!\n📦 Added to /inventory."
+        result_text = f"🎁 **Daily Pack!**\n{escape(player['username'])} got **{p_name}**!\n📦 Added to inventory."
     elif p_type == 'exp':
         updates['exp'] = player['exp'] + p_amount
         updates['total_exp'] = player['total_exp'] + p_amount
-        result_text = f"🎁 **Daily Pack!** 🎁\n{escape(player['username'])} found a **{p_name}**!\n✨ **+{p_amount} EXP!**"
+        result_text = f"🎁 **Daily Pack!**\n{escape(player['username'])} got **{p_name}**!\n✨ +{p_amount} EXP!"
 
     return result_text, updates
 
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles all inline queries (@BotName ...) - OPTIMIZED FOR SPEED."""
+    """Handles inline queries - shows game options."""
     query = update.inline_query
     if not query:
         return
@@ -142,7 +167,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if player:
         is_hosp, _ = gl.get_hospital_status(player)
         
-        # --- 1. Show My Wallet (Instant) ---
+        # --- 1. Show Wallet ---
         wallet_text = get_wallet_text(player)
         results.append(
             InlineQueryResultArticle(
@@ -153,29 +178,27 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         )
         
-        # --- 2. Top Killers (Instant) ---
-        killers_text = get_top_killers_text()
+        # --- 2. Top Killers ---
         results.append(
             InlineQueryResultArticle(
                 id="top_killers",
                 title="☠️ Top 5 Killers",
                 description="Show leaderboard",
-                input_message_content=InputTextMessageContent(killers_text, parse_mode="HTML")
+                input_message_content=InputTextMessageContent(get_top_killers_text(), parse_mode="HTML")
             )
         )
         
-        # --- 3. Top Richest (Instant) ---
-        rich_text = get_top_rich_text()
+        # --- 3. Top Richest ---
         results.append(
             InlineQueryResultArticle(
                 id="top_rich",
                 title="💰 Top 5 Richest",
                 description="Show leaderboard",
-                input_message_content=InputTextMessageContent(rich_text, parse_mode="HTML")
+                input_message_content=InputTextMessageContent(get_top_rich_text(), parse_mode="HTML")
             )
         )
         
-        # --- 4. Daily Pack (Only if available) ---
+        # --- 4. Daily Pack ---
         now = datetime.datetime.now(timezone.utc)
         last_claim_time = player.get('inline_pack_cooldown')
         
@@ -191,163 +214,220 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         pack_available = not last_claim_time or (now - last_claim_time) >= datetime.timedelta(hours=PACK_COOLDOWN_HOURS)
         
         if pack_available:
-            # ⚡ ONLY calculate when showing option
-            result_text, updates_to_be_done = get_daily_pack_prize(player)
-            db.update_player(user_id, updates_to_be_done)
-
+            result_text, updates = get_daily_pack_prize(player)
+            db.update_player(user_id, updates)
             results.append(
                 InlineQueryResultArticle(
                     id="daily_pack",
                     title="🎁 Daily Shinobi Pack!",
-                    description=f"Free rewards!",
+                    description="Free rewards!",
                     input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
                 )
             )
         
-        # 🎮 GAMES - Show ONLY options, calculate on click
-        if not is_hosp:
-            # --- Shadow Clone Training (Show options only) ---
-            if player['ryo'] >= CLONE_COST:
-                for diff_key, diff_data in list(CLONE_TRAINING.items())[:2]:  # Show only 2 to save space
-                    # ⚡ Calculate instantly for ONE game
-                    training = diff_data
-                    success = random.random() < training['success']
-                    
-                    if success:
-                        result_text = f"🌀 **SHADOW CLONE** 🌀\n\n{diff_data['name']}\n\n✅ **SUCCESS!**\n💰 +{training['reward']} Ryo!"
-                        updates = {'ryo': player['ryo'] - CLONE_COST + training['reward']}
-                    else:
-                        result_text = f"🌀 **SHADOW CLONE** 🌀\n\n{diff_data['name']}\n\n❌ **FAILED!**\n💸 -{CLONE_COST} Ryo"
-                        updates = {'ryo': player['ryo'] - CLONE_COST}
-                    
-                    db.update_player(user_id, updates)
-                    
-                    results.append(
-                        InlineQueryResultArticle(
-                            id=f"clone_{diff_key}_{uuid.uuid4()}",
-                            title=f"🌀 Shadow Clone: {diff_data['name']}",
-                            description=f"Cost: {CLONE_COST} | Reward: {diff_data['reward']}",
-                            input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
+        # 🎮 INTERACTIVE JUTSU BATTLE GAMES
+        if not is_hosp and player['ryo'] >= 50:
+            # Show different enemy options
+            for enemy_key, enemy_data in list(GAME_ENEMIES.items())[:3]:  # Show 3 enemies
+                # Create game start message with buttons
+                game_id = f"{user_id}_{enemy_key}_{uuid.uuid4().hex[:8]}"
+                
+                start_text = (
+                    f"🎮 **NINJA BATTLE!** 🎮\n\n"
+                    f"You encounter: **{enemy_data['name']}** {enemy_data['image']}\n"
+                    f"Enemy HP: {enemy_data['hp']}\n"
+                    f"Your HP: 100\n\n"
+                    f"Choose your jutsu wisely!"
+                )
+                
+                # Create jutsu selection buttons
+                keyboard = [
+                    [
+                        InlineKeyboardButton(
+                            PLAYER_JUTSUS['fireball']['name'],
+                            callback_data=f"jutsu_game_{game_id}_fireball_{enemy_key}"
+                        ),
+                        InlineKeyboardButton(
+                            PLAYER_JUTSUS['shadow_clone']['name'],
+                            callback_data=f"jutsu_game_{game_id}_shadow_clone_{enemy_key}"
                         )
-                    )
-            
-            # --- Ninja Battle (1 character with image) ---
-            if player['ryo'] >= BATTLE_COST:
-                # ⚡ Show ONLY Naruto to save time
-                char_key = 'naruto'
-                char_data = BATTLE_CHARACTERS[char_key]
-                
-                opponent_choice = random.choice(list(BATTLE_CHARACTERS.keys()))
-                opponent_char = BATTLE_CHARACTERS[opponent_choice]
-                
-                # Quick battle logic
-                if char_key == opponent_choice:
-                    result = "DRAW 🤝"
-                    winnings = 0
-                elif (
-                    (char_data['strength'] == 'Taijutsu' and opponent_char['strength'] == 'Genjutsu') or
-                    (char_data['strength'] == 'Ninjutsu' and opponent_char['strength'] == 'Taijutsu') or
-                    (char_data['strength'] == 'Genjutsu' and opponent_char['strength'] == 'Ninjutsu')
-                ):
-                    result = "VICTORY 🏆"
-                    winnings = BATTLE_COST * 2
-                else:
-                    result = "DEFEAT 💔"
-                    winnings = 0
-                
-                result_text = (
-                    f"⚔️ **NINJA BATTLE** ⚔️\n\n"
-                    f"You: {char_data['name']}\n"
-                    f"VS\n"
-                    f"Opponent: {opponent_char['name']}\n\n"
-                    f"**{result}**"
-                )
-                
-                if winnings > 0:
-                    updates = {'ryo': player['ryo'] - BATTLE_COST + winnings}
-                    result_text += f"\n💰 Won {winnings} Ryo!"
-                elif result == "DRAW 🤝":
-                    updates = {}
-                else:
-                    updates = {'ryo': player['ryo'] - BATTLE_COST}
-                    result_text += f"\n💸 Lost {BATTLE_COST} Ryo"
-                
-                db.update_player(user_id, updates)
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            PLAYER_JUTSUS['water_dragon']['name'],
+                            callback_data=f"jutsu_game_{game_id}_water_dragon_{enemy_key}"
+                        ),
+                        InlineKeyboardButton(
+                            PLAYER_JUTSUS['lightning_blade']['name'],
+                            callback_data=f"jutsu_game_{game_id}_lightning_blade_{enemy_key}"
+                        )
+                    ],
+                    [
+                        InlineKeyboardButton(
+                            PLAYER_JUTSUS['rasengan']['name'],
+                            callback_data=f"jutsu_game_{game_id}_rasengan_{enemy_key}"
+                        ),
+                        InlineKeyboardButton(
+                            PLAYER_JUTSUS['genjutsu']['name'],
+                            callback_data=f"jutsu_game_{game_id}_genjutsu_{enemy_key}"
+                        )
+                    ]
+                ]
                 
                 results.append(
-                    InlineQueryResultPhoto(
-                        id=f"battle_{uuid.uuid4()}",
-                        photo_url=char_data['image'],
-                        thumbnail_url=char_data['image'],
-                        title=f"⚔️ Fight as {char_data['name']}",
-                        description=f"Cost: {BATTLE_COST} | Win: {BATTLE_COST * 2}",
-                        caption=result_text,
-                        parse_mode="HTML"
+                    InlineQueryResultArticle(
+                        id=f"game_{enemy_key}_{uuid.uuid4().hex[:8]}",
+                        title=f"🎮 Battle {enemy_data['name']}!",
+                        description=f"Cost: 50 Ryo | Reward: {enemy_data['reward']} Ryo",
+                        input_message_content=InputTextMessageContent(start_text, parse_mode="HTML"),
+                        reply_markup=InlineKeyboardMarkup(keyboard)
                     )
                 )
-            
-            # --- Akatsuki Fight (1 member with image) ---
-            if player['ryo'] >= AKATSUKI_COST:
-                # ⚡ Show ONLY Itachi to save time
-                member_key = 'itachi'
-                member = AKATSUKI_MEMBERS[member_key]
-                player_power = player['level'] * 10 + gl.get_total_stats(player)['strength']
-                
-                base_chance = member['difficulty']
-                power_bonus = min(0.15, player_power / 1000)
-                success = random.random() < (base_chance + power_bonus)
-                
-                if success:
-                    result_text = (
-                        f"🔴 **AKATSUKI FIGHT** 🔴\n\n"
-                        f"Enemy: {member['name']}\n\n"
-                        f"🏆 **VICTORY!**\n"
-                        f"💰 +{member['reward']} Ryo\n"
-                        f"✨ +50 EXP!"
-                    )
-                    updates = {
-                        'ryo': player['ryo'] - AKATSUKI_COST + member['reward'],
-                        'exp': player['exp'] + 50,
-                        'total_exp': player['total_exp'] + 50
-                    }
-                else:
-                    result_text = (
-                        f"🔴 **AKATSUKI FIGHT** 🔴\n\n"
-                        f"Enemy: {member['name']}\n\n"
-                        f"💔 **DEFEATED!**\n"
-                        f"💸 -{AKATSUKI_COST} Ryo"
-                    )
-                    updates = {'ryo': player['ryo'] - AKATSUKI_COST}
-                
-                db.update_player(user_id, updates)
-                
-                results.append(
-                    InlineQueryResultPhoto(
-                        id=f"akatsuki_{uuid.uuid4()}",
-                        photo_url=member['image'],
-                        thumbnail_url=member['image'],
-                        title=f"🔴 Fight {member['name']}",
-                        description=f"Cost: {AKATSUKI_COST} | Reward: {member['reward']}",
-                        caption=result_text,
-                        parse_mode="HTML"
-                    )
-                )
-            
+        
     else:
-        # --- Not registered ---
+        # Not registered
         results.append(
             InlineQueryResultArticle(
                 id="register",
                 title="❌ Not registered!",
-                description="Click to ask how to join",
-                input_message_content=InputTextMessageContent(
-                    f"How do I /register for @{context.bot.username}?"
-                )
+                description="Click to join",
+                input_message_content=InputTextMessageContent(f"How do I /register for @{context.bot.username}?")
             )
         )
 
-    # ⚡ Answer FAST with cache_time=0
     try:
         await query.answer(results, cache_time=0)
     except Exception as e:
-        logger.error(f"Error answering inline query: {e}")
+        logger.error(f"Inline query error: {e}")
+
+
+# 🎮 CALLBACK HANDLER FOR JUTSU GAME BUTTONS
+async def jutsu_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles button clicks in jutsu battle games."""
+    query = update.callback_query
+    await query.answer()
+    
+    # Parse callback data: jutsu_game_{user_id}_{enemy_key}_{uuid}_{jutsu}_{enemy}
+    parts = query.data.split('_')
+    if len(parts) < 6:
+        return
+    
+    user_id_from_game = int(parts[2])
+    jutsu_choice = parts[4]
+    enemy_key = parts[5]
+    
+    # Verify it's the right player
+    if query.from_user.id != user_id_from_game:
+        await query.answer("This is not your game!", show_alert=True)
+        return
+    
+    player = db.get_player(query.from_user.id)
+    if not player or player['ryo'] < 50:
+        await query.answer("Not enough Ryo!", show_alert=True)
+        return
+    
+    # Get enemy and player jutsu
+    enemy_data = GAME_ENEMIES[enemy_key]
+    player_jutsu = PLAYER_JUTSUS[jutsu_choice]
+    
+    # Enemy chooses random attack
+    enemy_attack_key = random.choice(list(enemy_data['attacks'].keys()))
+    enemy_attack = enemy_data['attacks'][enemy_attack_key]
+    
+    # Calculate damage
+    player_damage = player_jutsu['power']
+    enemy_damage = enemy_attack['power']
+    
+    # Type effectiveness
+    if player_jutsu['type'] == enemy_data['weakness']:
+        player_damage = int(player_damage * 1.5)
+        effectiveness_text = "💥 Super effective!"
+    elif player_jutsu['type'] in enemy_attack.get('weak_to', []):
+        player_damage = int(player_damage * 0.5)
+        effectiveness_text = "😔 Not very effective..."
+    else:
+        effectiveness_text = ""
+    
+    # Determine winner
+    player_hp = 100 - enemy_damage
+    enemy_hp = enemy_data['hp'] - player_damage
+    
+    if enemy_hp <= 0:
+        # Player wins!
+        result_text = (
+            f"🎮 **BATTLE RESULT!** 🎮\n\n"
+            f"You used: {player_jutsu['name']}\n"
+            f"Damage dealt: {player_damage}\n"
+            f"{effectiveness_text}\n\n"
+            f"{enemy_data['name']} used: {enemy_attack['name']}\n"
+            f"Damage taken: {enemy_damage}\n\n"
+            f"🏆 **VICTORY!** 🏆\n"
+            f"You defeated {enemy_data['name']}!\n"
+            f"💰 Reward: +{enemy_data['reward']} Ryo\n"
+            f"✨ +30 EXP!"
+        )
+        
+        updates = {
+            'ryo': player['ryo'] - 50 + enemy_data['reward'],
+            'exp': player['exp'] + 30,
+            'total_exp': player['total_exp'] + 30
+        }
+    elif player_hp <= 0:
+        # Player loses
+        result_text = (
+            f"🎮 **BATTLE RESULT!** 🎮\n\n"
+            f"You used: {player_jutsu['name']}\n"
+            f"Damage dealt: {player_damage}\n"
+            f"{effectiveness_text}\n\n"
+            f"{enemy_data['name']} used: {enemy_attack['name']}\n"
+            f"Damage taken: {enemy_damage}\n\n"
+            f"💔 **DEFEAT!** 💔\n"
+            f"You were defeated by {enemy_data['name']}!\n"
+            f"💸 Lost: 50 Ryo"
+        )
+        
+        updates = {'ryo': player['ryo'] - 50}
+    else:
+        # Close battle - decided by luck
+        if random.random() < 0.5:
+            result_text = (
+                f"🎮 **BATTLE RESULT!** 🎮\n\n"
+                f"You used: {player_jutsu['name']}\n"
+                f"Damage dealt: {player_damage}\n"
+                f"{effectiveness_text}\n\n"
+                f"{enemy_data['name']} used: {enemy_attack['name']}\n"
+                f"Damage taken: {enemy_damage}\n\n"
+                f"⚔️ **CLOSE FIGHT!** ⚔️\n"
+                f"You narrowly win!\n"
+                f"💰 Reward: +{int(enemy_data['reward'] * 0.7)} Ryo"
+            )
+            updates = {'ryo': player['ryo'] - 50 + int(enemy_data['reward'] * 0.7)}
+        else:
+            result_text = (
+                f"🎮 **BATTLE RESULT!** 🎮\n\n"
+                f"You used: {player_jutsu['name']}\n"
+                f"Damage dealt: {player_damage}\n"
+                f"{effectiveness_text}\n\n"
+                f"{enemy_data['name']} used: {enemy_attack['name']}\n"
+                f"Damage taken: {enemy_damage}\n\n"
+                f"⚔️ **CLOSE FIGHT!** ⚔️\n"
+                f"You narrowly lose!\n"
+                f"💸 Lost: 40 Ryo"
+            )
+            updates = {'ryo': player['ryo'] - 40}
+    
+    # Update database
+    db.update_player(query.from_user.id, updates)
+    
+    # Add "Play Again" button
+    keyboard = [[InlineKeyboardButton("🎮 Play Again?", switch_inline_query_current_chat="")]]
+    
+    # Edit the message with result
+    try:
+        await query.edit_message_text(
+            text=result_text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    except Exception as e:
+        logger.error(f"Error editing game message: {e}")
