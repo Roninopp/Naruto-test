@@ -24,76 +24,78 @@ PACK_LOOT_TABLE = [
 ]
 PACK_COOLDOWN_HOURS = 4
 
-# 🎮 INTERACTIVE GAME ENEMIES - Balanced for better gameplay
+# 🎮 GAME STATE STORAGE (in-memory for active games)
+ACTIVE_GAMES = {}
+
+# 🎮 INTERACTIVE GAME ENEMIES with images
 GAME_ENEMIES = {
-    'z': {  # zabuza
+    'z': {
         'name': 'Zabuza Momochi',
-        'image': '⚔️',
-        'hp': 70,  # Reduced from 100
+        'image': 'https://envs.sh/Vux.jpg',
+        'emoji': '⚔️',
+        'max_hp': 120,
         'attacks': {
-            'wd': {'name': 'Water Dragon', 'power': 30, 'weak_to': ['l'], 'strong_vs': ['f']},  # Reduced from 40
-            'hm': {'name': 'Hidden Mist', 'power': 25, 'weak_to': ['w'], 'strong_vs': []}  # Reduced from 30
+            'wd': {'name': 'Water Dragon Jutsu', 'power': 25, 'chakra': 20, 'weak_to': ['l'], 'strong_vs': ['f']},
+            'hm': {'name': 'Hidden Mist Technique', 'power': 18, 'chakra': 15, 'weak_to': ['w'], 'strong_vs': []},
+            'sw': {'name': 'Silent Killing', 'power': 30, 'chakra': 25, 'weak_to': [], 'strong_vs': []}
         },
         'weakness': 'l',
-        'reward': 200
+        'reward': 250,
+        'chakra': 100
     },
-    's': {  # sound_ninja
+    's': {
         'name': 'Sound Ninja Quartet',
-        'image': '🎵',
-        'hp': 60,  # Reduced from 80
+        'image': 'https://envs.sh/VFE.jpg',
+        'emoji': '🎵',
+        'max_hp': 100,
         'attacks': {
-            'sw': {'name': 'Sound Wave', 'power': 20, 'weak_to': [], 'strong_vs': []},  # Reduced from 25
-            'cm': {'name': 'Curse Mark', 'power': 28, 'weak_to': ['m'], 'strong_vs': ['t']}  # Reduced from 35
+            'sw': {'name': 'Sound Wave Blast', 'power': 20, 'chakra': 15, 'weak_to': [], 'strong_vs': []},
+            'cm': {'name': 'Curse Mark Power', 'power': 28, 'chakra': 20, 'weak_to': ['m'], 'strong_vs': ['t']},
+            'kb': {'name': 'Kunai Barrage', 'power': 15, 'chakra': 10, 'weak_to': [], 'strong_vs': []}
         },
         'weakness': 'g',
-        'reward': 150
+        'reward': 180,
+        'chakra': 80
     },
-    'i': {  # itachi - HARD BOSS
+    'i': {
         'name': 'Itachi Uchiha',
-        'image': '🔴',
-        'hp': 100,  # Reduced from 150
+        'image': 'https://envs.sh/VFD.jpg',
+        'emoji': '🔴',
+        'max_hp': 150,
         'attacks': {
-            'am': {'name': 'Amaterasu', 'power': 45, 'weak_to': ['w'], 'strong_vs': ['wa']},  # Reduced from 60
-            'ts': {'name': 'Tsukuyomi', 'power': 40, 'weak_to': ['sh'], 'strong_vs': ['g']}  # Reduced from 50
+            'am': {'name': 'Amaterasu', 'power': 40, 'chakra': 35, 'weak_to': ['w'], 'strong_vs': ['wa']},
+            'ts': {'name': 'Tsukuyomi', 'power': 35, 'chakra': 30, 'weak_to': [], 'strong_vs': ['g']},
+            'fb': {'name': 'Fireball Jutsu', 'power': 25, 'chakra': 20, 'weak_to': ['wa'], 'strong_vs': []}
         },
         'weakness': '',
-        'reward': 500
-    },
-    'o': {  # orochimaru
-        'name': 'Orochimaru',
-        'image': '🐍',
-        'hp': 80,  # Reduced from 120
-        'attacks': {
-            'ss': {'name': 'Giant Snakes', 'power': 35, 'weak_to': ['f'], 'strong_vs': ['e']},  # Reduced from 45
-            'cs': {'name': 'Curse Seal', 'power': 32, 'weak_to': ['m'], 'strong_vs': []}  # Reduced from 40
-        },
-        'weakness': 'm',
-        'reward': 300
-    },
-    'a': {  # akatsuki
-        'name': 'Akatsuki Member',
-        'image': '☁️',
-        'hp': 65,  # Reduced from 90
-        'attacks': {
-            'kb': {'name': 'Kunai Barrage', 'power': 25, 'weak_to': [], 'strong_vs': []},  # Reduced from 30
-            'et': {'name': 'Explosive Tags', 'power': 28, 'weak_to': ['su'], 'strong_vs': ['t']}  # Reduced from 35
-        },
-        'weakness': 'n',
-        'reward': 180
+        'reward': 500,
+        'chakra': 120
     }
 }
 
-# Player Jutsu Options - Simplified with short keys
+# Player Jutsu Options
 PLAYER_JUTSUS = {
-    'f': {'name': '🔥 Fireball', 'type': 'f', 'power': 35},
-    'sc': {'name': '🌀 Clone', 'type': 'n', 'power': 30},
-    'su': {'name': '🍃 Substitution', 'type': 'e', 'power': 0},
-    'wa': {'name': '🌊 Water Dragon', 'type': 'wa', 'power': 40},
-    'l': {'name': '⚡ Lightning', 'type': 'l', 'power': 45},
-    'r': {'name': '💫 Rasengan', 'type': 'n', 'power': 50},
-    'm': {'name': '💚 Medical', 'type': 'm', 'power': 0},
-    'g': {'name': '👁️ Genjutsu', 'type': 'g', 'power': 35}
+    'f': {'name': '🔥 Fireball', 'type': 'f', 'power': 25, 'chakra': 15},
+    'sc': {'name': '🌀 Shadow Clone', 'type': 'n', 'power': 20, 'chakra': 20},
+    'wa': {'name': '🌊 Water Dragon', 'type': 'wa', 'power': 30, 'chakra': 25},
+    'l': {'name': '⚡ Lightning Blade', 'type': 'l', 'power': 35, 'chakra': 30},
+    'r': {'name': '💫 Rasengan', 'type': 'n', 'power': 40, 'chakra': 35},
+    'g': {'name': '👁️ Genjutsu', 'type': 'g', 'power': 28, 'chakra': 20},
+    'h': {'name': '💚 Heal', 'type': 'heal', 'power': 0, 'chakra': 25, 'heal': 30},
+    't': {'name': '👊 Taijutsu', 'type': 't', 'power': 15, 'chakra': 5}
 }
+
+def health_bar(current, max_hp, length=10):
+    """Generate health bar visual."""
+    filled = int((current / max_hp) * length)
+    bar = '█' * filled + '░' * (length - filled)
+    return f"{bar} {current}/{max_hp}"
+
+def chakra_bar(current, max_chakra, length=10):
+    """Generate chakra bar visual."""
+    filled = int((current / max_chakra) * length)
+    bar = '▰' * filled + '▱' * (length - filled)
+    return f"{bar} {current}/{max_chakra}"
 
 def get_wallet_text(player):
     is_hosp, _ = gl.get_hospital_status(player)
@@ -225,55 +227,25 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
             )
         
-        # 🎮 INTERACTIVE JUTSU BATTLE GAMES - Fixed callback data length
+        # 🎮 INTERACTIVE JUTSU BATTLE GAMES
         if not is_hosp and player['ryo'] >= 50:
-            # Show different enemy options
-            for enemy_key, enemy_data in list(GAME_ENEMIES.items())[:3]:
-                # Generate short game ID (8 chars max)
+            for enemy_key, enemy_data in GAME_ENEMIES.items():
                 game_id = uuid.uuid4().hex[:6]
                 
                 start_text = (
-                    f"🎮 **NINJA BATTLE!** 🎮\n\n"
-                    f"You encounter: **{enemy_data['name']}** {enemy_data['image']}\n"
-                    f"Enemy HP: {enemy_data['hp']}\n"
-                    f"Your HP: 100\n\n"
-                    f"Choose your jutsu wisely!"
+                    f"🎮 <b>NINJA BATTLE!</b> 🎮\n\n"
+                    f"<b>Enemy:</b> {enemy_data['name']} {enemy_data['emoji']}\n"
+                    f"<b>HP:</b> {health_bar(enemy_data['max_hp'], enemy_data['max_hp'])}\n"
+                    f"<b>Chakra:</b> {chakra_bar(enemy_data['chakra'], enemy_data['chakra'])}\n\n"
+                    f"<b>Your HP:</b> {health_bar(100, 100)}\n"
+                    f"<b>Your Chakra:</b> {chakra_bar(100, 100)}\n\n"
+                    f"💰 <b>Entry Fee:</b> 50 Ryo\n"
+                    f"🏆 <b>Reward:</b> {enemy_data['reward']} Ryo\n\n"
+                    f"<i>Choose your first jutsu!</i>"
                 )
                 
-                # Create jutsu selection buttons with SHORT callback data
-                # Format: jg_{game_id}_{jutsu}_{enemy}
-                keyboard = [
-                    [
-                        InlineKeyboardButton(
-                            PLAYER_JUTSUS['f']['name'],
-                            callback_data=f"jg_{game_id}_f_{enemy_key}"
-                        ),
-                        InlineKeyboardButton(
-                            PLAYER_JUTSUS['sc']['name'],
-                            callback_data=f"jg_{game_id}_sc_{enemy_key}"
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            PLAYER_JUTSUS['wa']['name'],
-                            callback_data=f"jg_{game_id}_wa_{enemy_key}"
-                        ),
-                        InlineKeyboardButton(
-                            PLAYER_JUTSUS['l']['name'],
-                            callback_data=f"jg_{game_id}_l_{enemy_key}"
-                        )
-                    ],
-                    [
-                        InlineKeyboardButton(
-                            PLAYER_JUTSUS['r']['name'],
-                            callback_data=f"jg_{game_id}_r_{enemy_key}"
-                        ),
-                        InlineKeyboardButton(
-                            PLAYER_JUTSUS['g']['name'],
-                            callback_data=f"jg_{game_id}_g_{enemy_key}"
-                        )
-                    ]
-                ]
+                # Create start button
+                keyboard = [[InlineKeyboardButton("⚔️ START BATTLE!", callback_data=f"jg_start_{game_id}_{enemy_key}")]]
                 
                 results.append(
                     InlineQueryResultArticle(
@@ -281,7 +253,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         title=f"🎮 Battle {enemy_data['name']}!",
                         description=f"Cost: 50 Ryo | Reward: {enemy_data['reward']} Ryo",
                         input_message_content=InputTextMessageContent(start_text, parse_mode="HTML"),
-                        reply_markup=InlineKeyboardMarkup(keyboard)
+                        reply_markup=InlineKeyboardMarkup(keyboard),
+                        thumb_url=enemy_data['image']
                     )
                 )
         
@@ -308,120 +281,260 @@ async def jutsu_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     
-    # Parse callback data: jg_{game_id}_{jutsu}_{enemy}
     parts = query.data.split('_')
-    if len(parts) < 4:
+    if len(parts) < 3:
         return
     
-    game_id = parts[1]
-    jutsu_choice = parts[2]
-    enemy_key = parts[3]
+    action = parts[1]  # 'start', 'move', 'end'
     
     player = db.get_player(query.from_user.id)
-    if not player or player['ryo'] < 50:
-        await query.answer("Not enough Ryo!", show_alert=True)
+    if not player:
+        await query.answer("You need to register first!", show_alert=True)
         return
     
-    # Get enemy and player jutsu
-    enemy_data = GAME_ENEMIES.get(enemy_key)
-    player_jutsu = PLAYER_JUTSUS.get(jutsu_choice)
+    # START NEW GAME
+    if action == 'start':
+        if player['ryo'] < 50:
+            await query.answer("Not enough Ryo! Need 50 Ryo to play.", show_alert=True)
+            return
+        
+        game_id = parts[2]
+        enemy_key = parts[3]
+        enemy_data = GAME_ENEMIES.get(enemy_key)
+        
+        if not enemy_data:
+            return
+        
+        # Initialize game state
+        ACTIVE_GAMES[game_id] = {
+            'player_id': query.from_user.id,
+            'enemy_key': enemy_key,
+            'player_hp': 100,
+            'player_chakra': 100,
+            'enemy_hp': enemy_data['max_hp'],
+            'enemy_chakra': enemy_data['chakra'],
+            'turn': 1,
+            'log': []
+        }
+        
+        # Deduct entry fee
+        db.update_player(query.from_user.id, {'ryo': player['ryo'] - 50})
+        
+        # Show jutsu selection
+        battle_text = (
+            f"🎮 <b>BATTLE STARTED!</b> 🎮\n\n"
+            f"<b>Turn 1</b>\n\n"
+            f"👤 <b>You</b>\n"
+            f"❤️ {health_bar(100, 100)}\n"
+            f"💙 {chakra_bar(100, 100)}\n\n"
+            f"👹 <b>{enemy_data['name']}</b> {enemy_data['emoji']}\n"
+            f"❤️ {health_bar(enemy_data['max_hp'], enemy_data['max_hp'])}\n"
+            f"💙 {chakra_bar(enemy_data['chakra'], enemy_data['chakra'])}\n\n"
+            f"<i>Select your jutsu:</i>"
+        )
+        
+        keyboard = [
+            [
+                InlineKeyboardButton(f"🔥 Fireball (15💙)", callback_data=f"jg_move_{game_id}_f"),
+                InlineKeyboardButton(f"👊 Taijutsu (5💙)", callback_data=f"jg_move_{game_id}_t")
+            ],
+            [
+                InlineKeyboardButton(f"🌊 Water (25💙)", callback_data=f"jg_move_{game_id}_wa"),
+                InlineKeyboardButton(f"⚡ Lightning (30💙)", callback_data=f"jg_move_{game_id}_l")
+            ],
+            [
+                InlineKeyboardButton(f"💫 Rasengan (35💙)", callback_data=f"jg_move_{game_id}_r"),
+                InlineKeyboardButton(f"👁️ Genjutsu (20💙)", callback_data=f"jg_move_{game_id}_g")
+            ],
+            [
+                InlineKeyboardButton(f"💚 Heal (25💙)", callback_data=f"jg_move_{game_id}_h"),
+                InlineKeyboardButton(f"🏳️ Surrender", callback_data=f"jg_end_{game_id}_surrender")
+            ]
+        ]
+        
+        try:
+            await query.edit_message_text(
+                text=battle_text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except Exception as e:
+            logger.error(f"Error starting game: {e}")
     
-    if not enemy_data or not player_jutsu:
-        await query.answer("Invalid game data!", show_alert=True)
-        return
+    # PLAYER MAKES A MOVE
+    elif action == 'move':
+        game_id = parts[2]
+        jutsu_key = parts[3]
+        
+        game_state = ACTIVE_GAMES.get(game_id)
+        if not game_state or game_state['player_id'] != query.from_user.id:
+            await query.answer("This is not your game!", show_alert=True)
+            return
+        
+        enemy_data = GAME_ENEMIES[game_state['enemy_key']]
+        player_jutsu = PLAYER_JUTSUS[jutsu_key]
+        
+        # Check chakra
+        if game_state['player_chakra'] < player_jutsu['chakra']:
+            await query.answer("Not enough chakra!", show_alert=True)
+            return
+        
+        # Player turn
+        game_state['player_chakra'] -= player_jutsu['chakra']
+        
+        if player_jutsu['type'] == 'heal':
+            heal_amount = min(player_jutsu['heal'], 100 - game_state['player_hp'])
+            game_state['player_hp'] += heal_amount
+            game_state['log'].append(f"💚 You healed {heal_amount} HP!")
+        else:
+            # Calculate damage
+            damage = player_jutsu['power']
+            
+            # Type effectiveness
+            if player_jutsu['type'] == enemy_data['weakness']:
+                damage = int(damage * 1.5)
+                game_state['log'].append(f"💥 SUPER EFFECTIVE!")
+            
+            game_state['enemy_hp'] -= damage
+            game_state['log'].append(f"⚔️ You used {player_jutsu['name']} - {damage} damage!")
+        
+        # Check if enemy defeated
+        if game_state['enemy_hp'] <= 0:
+            await end_game(query, game_id, game_state, enemy_data, won=True)
+            return
+        
+        # Enemy turn
+        if game_state['enemy_chakra'] >= 10:
+            # Choose random attack
+            available_attacks = [a for a, d in enemy_data['attacks'].items() if d['chakra'] <= game_state['enemy_chakra']]
+            if available_attacks:
+                enemy_attack_key = random.choice(available_attacks)
+                enemy_attack = enemy_data['attacks'][enemy_attack_key]
+                
+                game_state['enemy_chakra'] -= enemy_attack['chakra']
+                game_state['player_hp'] -= enemy_attack['power']
+                game_state['log'].append(f"💢 {enemy_data['name']} used {enemy_attack['name']} - {enemy_attack['power']} damage!")
+        
+        # Check if player defeated
+        if game_state['player_hp'] <= 0:
+            await end_game(query, game_id, game_state, enemy_data, won=False)
+            return
+        
+        # Continue battle
+        game_state['turn'] += 1
+        
+        # Build battle log
+        log_text = "\n".join(game_state['log'][-3:])  # Show last 3 actions
+        
+        battle_text = (
+            f"🎮 <b>BATTLE - Turn {game_state['turn']}</b> 🎮\n\n"
+            f"👤 <b>You</b>\n"
+            f"❤️ {health_bar(game_state['player_hp'], 100)}\n"
+            f"💙 {chakra_bar(game_state['player_chakra'], 100)}\n\n"
+            f"👹 <b>{enemy_data['name']}</b> {enemy_data['emoji']}\n"
+            f"❤️ {health_bar(game_state['enemy_hp'], enemy_data['max_hp'])}\n"
+            f"💙 {chakra_bar(game_state['enemy_chakra'], enemy_data['chakra'])}\n\n"
+            f"<b>Battle Log:</b>\n{log_text}\n\n"
+            f"<i>Choose your next move:</i>"
+        )
+        
+        keyboard = [
+            [
+                InlineKeyboardButton(f"🔥 Fireball (15💙)", callback_data=f"jg_move_{game_id}_f"),
+                InlineKeyboardButton(f"👊 Taijutsu (5💙)", callback_data=f"jg_move_{game_id}_t")
+            ],
+            [
+                InlineKeyboardButton(f"🌊 Water (25💙)", callback_data=f"jg_move_{game_id}_wa"),
+                InlineKeyboardButton(f"⚡ Lightning (30💙)", callback_data=f"jg_move_{game_id}_l")
+            ],
+            [
+                InlineKeyboardButton(f"💫 Rasengan (35💙)", callback_data=f"jg_move_{game_id}_r"),
+                InlineKeyboardButton(f"👁️ Genjutsu (20💙)", callback_data=f"jg_move_{game_id}_g")
+            ],
+            [
+                InlineKeyboardButton(f"💚 Heal (25💙)", callback_data=f"jg_move_{game_id}_h"),
+                InlineKeyboardButton(f"🏳️ Surrender", callback_data=f"jg_end_{game_id}_surrender")
+            ]
+        ]
+        
+        try:
+            await query.edit_message_text(
+                text=battle_text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except Exception as e:
+            logger.error(f"Error updating battle: {e}")
     
-    # Enemy chooses random attack
-    enemy_attack_key = random.choice(list(enemy_data['attacks'].keys()))
-    enemy_attack = enemy_data['attacks'][enemy_attack_key]
+    # END GAME
+    elif action == 'end':
+        game_id = parts[2]
+        reason = parts[3] if len(parts) > 3 else 'surrender'
+        
+        game_state = ACTIVE_GAMES.get(game_id)
+        if not game_state:
+            return
+        
+        enemy_data = GAME_ENEMIES[game_state['enemy_key']]
+        
+        if reason == 'surrender':
+            result_text = (
+                f"🏳️ <b>SURRENDERED</b>\n\n"
+                f"You gave up the fight!\n"
+                f"💸 Lost: 50 Ryo"
+            )
+        
+        keyboard = [[InlineKeyboardButton("🎮 Play Again?", switch_inline_query_current_chat="")]]
+        
+        try:
+            await query.edit_message_text(
+                text=result_text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except:
+            pass
+        
+        # Clean up
+        if game_id in ACTIVE_GAMES:
+            del ACTIVE_GAMES[game_id]
+
+
+async def end_game(query, game_id, game_state, enemy_data, won):
+    """End the game and show results."""
+    player = db.get_player(game_state['player_id'])
     
-    # Calculate damage
-    player_damage = player_jutsu['power']
-    enemy_damage = enemy_attack['power']
-    
-    # Type effectiveness
-    effectiveness_text = ""
-    if player_jutsu['type'] == enemy_data['weakness']:
-        player_damage = int(player_damage * 1.5)
-        effectiveness_text = "💥 Super effective!"
-    elif player_jutsu['type'] in enemy_attack.get('weak_to', []):
-        player_damage = int(player_damage * 0.5)
-        effectiveness_text = "😕 Not very effective..."
-    
-    # Determine winner
-    player_hp = 100 - enemy_damage
-    enemy_hp = enemy_data['hp'] - player_damage
-    
-    if enemy_hp <= 0:
-        # Player wins!
+    if won:
         result_text = (
-            f"🎮 **BATTLE RESULT!** 🎮\n\n"
-            f"You used: {player_jutsu['name']}\n"
-            f"Damage dealt: {player_damage}\n"
-            f"{effectiveness_text}\n\n"
-            f"{enemy_data['name']} used: {enemy_attack['name']}\n"
-            f"Damage taken: {enemy_damage}\n\n"
-            f"🏆 **VICTORY!** 🏆\n"
-            f"You defeated {enemy_data['name']}!\n"
+            f"🏆 <b>VICTORY!</b> 🏆\n\n"
+            f"You defeated <b>{enemy_data['name']}</b>!\n\n"
+            f"<b>Battle Summary:</b>\n"
+            f"Turns: {game_state['turn']}\n"
+            f"Your HP: {game_state['player_hp']}/100\n"
+            f"Your Chakra: {game_state['player_chakra']}/100\n\n"
             f"💰 Reward: +{enemy_data['reward']} Ryo\n"
-            f"✨ +30 EXP!"
+            f"✨ +50 EXP!"
         )
         
         updates = {
-            'ryo': player['ryo'] - 50 + enemy_data['reward'],
-            'exp': player['exp'] + 30,
-            'total_exp': player['total_exp'] + 30
+            'ryo': player['ryo'] + enemy_data['reward'],
+            'exp': player['exp'] + 50,
+            'total_exp': player['total_exp'] + 50
         }
-    elif player_hp <= 0:
-        # Player loses
-        result_text = (
-            f"🎮 **BATTLE RESULT!** 🎮\n\n"
-            f"You used: {player_jutsu['name']}\n"
-            f"Damage dealt: {player_damage}\n"
-            f"{effectiveness_text}\n\n"
-            f"{enemy_data['name']} used: {enemy_attack['name']}\n"
-            f"Damage taken: {enemy_damage}\n\n"
-            f"💔 **DEFEAT!** 💔\n"
-            f"You were defeated by {enemy_data['name']}!\n"
-            f"💸 Lost: 50 Ryo"
-        )
-        
-        updates = {'ryo': player['ryo'] - 50}
+        db.update_player(game_state['player_id'], updates)
     else:
-        # Close battle - decided by luck
-        if random.random() < 0.5:
-            result_text = (
-                f"🎮 **BATTLE RESULT!** 🎮\n\n"
-                f"You used: {player_jutsu['name']}\n"
-                f"Damage dealt: {player_damage}\n"
-                f"{effectiveness_text}\n\n"
-                f"{enemy_data['name']} used: {enemy_attack['name']}\n"
-                f"Damage taken: {enemy_damage}\n\n"
-                f"⚔️ **CLOSE FIGHT!** ⚔️\n"
-                f"You narrowly win!\n"
-                f"💰 Reward: +{int(enemy_data['reward'] * 0.7)} Ryo"
-            )
-            updates = {'ryo': player['ryo'] - 50 + int(enemy_data['reward'] * 0.7)}
-        else:
-            result_text = (
-                f"🎮 **BATTLE RESULT!** 🎮\n\n"
-                f"You used: {player_jutsu['name']}\n"
-                f"Damage dealt: {player_damage}\n"
-                f"{effectiveness_text}\n\n"
-                f"{enemy_data['name']} used: {enemy_attack['name']}\n"
-                f"Damage taken: {enemy_damage}\n\n"
-                f"⚔️ **CLOSE FIGHT!** ⚔️\n"
-                f"You narrowly lose!\n"
-                f"💸 Lost: 40 Ryo"
-            )
-            updates = {'ryo': player['ryo'] - 40}
+        result_text = (
+            f"💔 <b>DEFEATED!</b> 💔\n\n"
+            f"You were defeated by <b>{enemy_data['name']}</b>!\n\n"
+            f"<b>Battle Summary:</b>\n"
+            f"Turns: {game_state['turn']}\n"
+            f"Enemy HP: {game_state['enemy_hp']}/{enemy_data['max_hp']}\n\n"
+            f"💸 Lost: 50 Ryo\n"
+            f"<i>Train harder and try again!</i>"
+        )
     
-    # Update database
-    db.update_player(query.from_user.id, updates)
-    
-    # Add "Play Again" button
     keyboard = [[InlineKeyboardButton("🎮 Play Again?", switch_inline_query_current_chat="")]]
     
-    # Edit the message with result
     try:
         await query.edit_message_text(
             text=result_text,
@@ -429,4 +542,8 @@ async def jutsu_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     except Exception as e:
-        logger.error(f"Error editing game message: {e}")
+        logger.error(f"Error ending game: {e}")
+    
+    # Clean up
+    if game_id in ACTIVE_GAMES:
+        del ACTIVE_GAMES[game_id]
