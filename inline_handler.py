@@ -531,19 +531,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 result_text, updates, image = play_summoning_jutsu(player)
                 db.update_player(user_id, updates)
                 
-                if image:
-                    results.append(
-                        InlineQueryResultPhoto(
-                            id=f"summon_{uuid.uuid4()}",
-                            photo_url=image,
-                            thumbnail_url=image,
-                            title=f"🐸 Summoning Jutsu!",
-                            description=f"Cost: {SUMMON_COST} Ryo | Summon powerful allies!",
-                            caption=result_text,
-                            parse_mode="HTML"
-                        )
-                    )
-                else:
+              else:
                     results.append(
                         InlineQueryResultArticle(
                             id=f"summon_{uuid.uuid4()}",
