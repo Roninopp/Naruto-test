@@ -4,7 +4,7 @@ import random
 import datetime
 from datetime import timezone
 from html import escape
-from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
+from telegram import Update, InlineQueryResultArticle, InputTextMessageContent, InlineQueryResultPhoto
 from telegram.ext import ContextTypes
 
 import database as db
@@ -23,52 +23,86 @@ PACK_LOOT_TABLE = [
     (1,   'exp', 'exp', 100, "Legendary EXP Scroll")
 ]
 
-# --- Cooldowns ---
 PACK_COOLDOWN_HOURS = 4
 
-# --- 🆕 NEW GAME CONSTANTS ---
-# Slot Machine
-SLOT_COST = 50
-SLOT_SYMBOLS = ["🍒", "🍋", "🍊", "🔔", "💎", "⭐", "🎰"]
-SLOT_PAYOUTS = {
-    ('💎', '💎', '💎'): 1000,  # Jackpot!
-    ('⭐', '⭐', '⭐'): 500,
-    ('🔔', '🔔', '🔔'): 300,
-    ('🍊', '🍊', '🍊'): 150,
-    ('🍋', '🍋', '🍋'): 100,
-    ('🍒', '🍒', '🍒'): 75,
-    'any_two': 25  # Any 2 matching
+# 🆕 EPIC NARUTO GAME CONSTANTS
+
+# Shadow Clone Training
+CLONE_COST = 80
+CLONE_TRAINING = {
+    'beginner': {'success': 0.30, 'reward': 250, 'name': 'Beginner (30% success)'},
+    'intermediate': {'success': 0.20, 'reward': 500, 'name': 'Intermediate (20% success)'},
+    'advanced': {'success': 0.10, 'reward': 1000, 'name': 'Advanced (10% success)'},
+    'forbidden': {'success': 0.05, 'reward': 2500, 'name': 'Forbidden Jutsu (5% success)'}
 }
 
-# Dice Battle
-DICE_COST = 30
-DICE_WIN_MULTIPLIER = 2.5
+# Ninja Battle Royale (Rock-Paper-Scissors with characters)
+BATTLE_COST = 100
+BATTLE_CHARACTERS = {
+    'naruto': {
+        'name': 'Naruto Uzumaki',
+        'image': 'https://i.imgur.com/YqN7xQs.jpg',
+        'strength': 'Taijutsu',
+        'weakness': 'Genjutsu',
+        'special': 'Rasengan'
+    },
+    'sasuke': {
+        'name': 'Sasuke Uchiha', 
+        'image': 'https://i.imgur.com/8kFvZOh.jpg',
+        'strength': 'Ninjutsu',
+        'weakness': 'Taijutsu',
+        'special': 'Chidori'
+    },
+    'sakura': {
+        'name': 'Sakura Haruno',
+        'image': 'https://i.imgur.com/nYvR7pQ.jpg',
+        'strength': 'Genjutsu',
+        'weakness': 'Ninjutsu',
+        'special': 'Chakra Punch'
+    }
+}
 
-# Coin Flip
-COINFLIP_COST = 40
-COINFLIP_WIN = 75
+# Akatsuki Encounter
+AKATSUKI_COST = 150
+AKATSUKI_MEMBERS = {
+    'itachi': {'name': 'Itachi Uchiha', 'image': 'https://i.imgur.com/4Rq5xOE.jpg', 'difficulty': 0.25, 'reward': 600},
+    'pain': {'name': 'Pain', 'image': 'https://i.imgur.com/nE6Bk2P.jpg', 'difficulty': 0.15, 'reward': 1000},
+    'madara': {'name': 'Madara Uchiha', 'image': 'https://i.imgur.com/8sN3yHD.jpg', 'difficulty': 0.08, 'reward': 1800},
+    'obito': {'name': 'Obito (Tobi)', 'image': 'https://i.imgur.com/9wK5xPm.jpg', 'difficulty': 0.20, 'reward': 750}
+}
 
-# Scratch Card
-SCRATCH_COST = 60
-SCRATCH_PRIZES = [
-    (60, 0, "Nothing"),      # 60% chance
-    (25, 50, "50 Ryo"),      # 25% chance
-    (10, 150, "150 Ryo"),    # 10% chance
-    (4, 300, "300 Ryo"),     # 4% chance
-    (1, 1000, "1000 Ryo!")   # 1% chance (Jackpot)
+# Summoning Jutsu
+SUMMON_COST = 120
+SUMMON_CREATURES = {
+    'gamabunta': {'name': 'Gamabunta (Giant Toad)', 'rarity': 0.20, 'power': 800, 'image': 'https://i.imgur.com/qK3xNvW.jpg'},
+    'manda': {'name': 'Manda (Giant Snake)', 'rarity': 0.15, 'power': 1000, 'image': 'https://i.imgur.com/7dH3kRx.jpg'},
+    'katsuyu': {'name': 'Katsuyu (Giant Slug)', 'rarity': 0.25, 'power': 600, 'image': 'https://i.imgur.com/5pN8yHm.jpg'},
+    'kurama': {'name': 'Kurama (Nine-Tails)', 'rarity': 0.05, 'power': 3000, 'image': 'https://i.imgur.com/nB6Hk2R.jpg'},
+    'failed': {'name': 'Summoning Failed!', 'rarity': 0.35, 'power': 0, 'image': None}
+}
+
+# Chunin Exam Challenge
+CHUNIN_COST = 90
+CHUNIN_STAGES = {
+    'written_test': {'difficulty': 0.40, 'reward': 200, 'desc': '📝 Written Test'},
+    'forest_survival': {'difficulty': 0.30, 'reward': 350, 'desc': '🌲 Forest of Death'},
+    'tournament': {'difficulty': 0.20, 'reward': 550, 'desc': '⚔️ Tournament Finals'}
+}
+
+# Tailed Beast Encounter
+TAILED_BEAST_COST = 200
+TAILED_BEASTS = [
+    {'name': 'Shukaku (One-Tail)', 'image': 'https://i.imgur.com/xK9nR3P.jpg', 'power': 1, 'reward': 300},
+    {'name': 'Matatabi (Two-Tails)', 'image': 'https://i.imgur.com/yN8kR5Q.jpg', 'power': 2, 'reward': 400},
+    {'name': 'Isobu (Three-Tails)', 'image': 'https://i.imgur.com/qL4nH7M.jpg', 'power': 3, 'reward': 500},
+    {'name': 'Son Goku (Four-Tails)', 'image': 'https://i.imgur.com/rM9pK6N.jpg', 'power': 4, 'reward': 700},
+    {'name': 'Kokuo (Five-Tails)', 'image': 'https://i.imgur.com/tP5nJ8L.jpg', 'power': 5, 'reward': 900},
+    {'name': 'Saiken (Six-Tails)', 'image': 'https://i.imgur.com/wQ7kM4O.jpg', 'power': 6, 'reward': 1100},
+    {'name': 'Chomei (Seven-Tails)', 'image': 'https://i.imgur.com/xR3nL6P.jpg', 'power': 7, 'reward': 1400},
+    {'name': 'Gyuki (Eight-Tails)', 'image': 'https://i.imgur.com/yT8mN5Q.jpg', 'power': 8, 'reward': 1800},
+    {'name': 'Kurama (Nine-Tails)', 'image': 'https://i.imgur.com/nB6Hk2R.jpg', 'power': 9, 'reward': 2500}
 ]
 
-# Ninja Roulette
-ROULETTE_COST = 100
-ROULETTE_NUMBERS = list(range(0, 37))  # 0-36
-ROULETTE_COLORS = {
-    'red': [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36],
-    'black': [2, 4, 6, 8, 10, 11, 13, 15, 17, 20, 22, 24, 26, 28, 29, 31, 33, 35],
-    'green': [0]
-}
-
-# Treasure Hunt (Multi-choice mini RPG)
-HUNT_COST = 75
 # ----------------------------
 
 def get_wallet_text(player):
@@ -136,203 +170,246 @@ def get_daily_pack_prize(player):
 
     return result_text, updates
 
-# 🆕 NEW GAME FUNCTIONS
+# 🆕 EPIC NARUTO GAME FUNCTIONS
 
-def play_slot_machine(player):
-    """Spins a 3-reel slot machine."""
-    reel1 = random.choice(SLOT_SYMBOLS)
-    reel2 = random.choice(SLOT_SYMBOLS)
-    reel3 = random.choice(SLOT_SYMBOLS)
+def play_shadow_clone_training(player, difficulty):
+    """Train with shadow clones at different difficulty levels."""
+    training = CLONE_TRAINING[difficulty]
     
-    result = (reel1, reel2, reel3)
-    winnings = 0
-    prize_text = "Nothing... Try again!"
+    if random.random() < training['success']:
+        # Success!
+        result_text = (
+            f"🌀 **SHADOW CLONE TRAINING** 🌀\n\n"
+            f"Difficulty: {training['name']}\n\n"
+            f"✅ **SUCCESS!**\n"
+            f"Your clones completed the training!\n"
+            f"💰 Reward: +{training['reward']} Ryo\n"
+            f"✨ Experience gained!"
+        )
+        updates = {'ryo': player['ryo'] - CLONE_COST + training['reward']}
+    else:
+        # Failed!
+        result_text = (
+            f"🌀 **SHADOW CLONE TRAINING** 🌀\n\n"
+            f"Difficulty: {training['name']}\n\n"
+            f"❌ **FAILED!**\n"
+            f"Your clones disappeared before completing training!\n"
+            f"💸 Lost: {CLONE_COST} Ryo"
+        )
+        updates = {'ryo': player['ryo'] - CLONE_COST}
     
-    # Check for wins
-    if result in SLOT_PAYOUTS:
-        winnings = SLOT_PAYOUTS[result]
-        prize_text = f"🎰 JACKPOT! You win {winnings} Ryo!"
-    elif reel1 == reel2 or reel2 == reel3 or reel1 == reel3:
-        winnings = SLOT_PAYOUTS['any_two']
-        prize_text = f"Two match! You win {winnings} Ryo!"
+    return result_text, updates
+
+def play_ninja_battle(player, choice):
+    """Battle using character selection (rock-paper-scissors style)."""
+    player_char = BATTLE_CHARACTERS[choice]
+    opponent_choice = random.choice(list(BATTLE_CHARACTERS.keys()))
+    opponent_char = BATTLE_CHARACTERS[opponent_choice]
     
-    net_gain = winnings - SLOT_COST
+    # Determine winner
+    if choice == opponent_choice:
+        # Draw
+        result = "DRAW"
+        winnings = 0
+        result_emoji = "🤝"
+    elif (
+        (player_char['strength'] == 'Taijutsu' and opponent_char['strength'] == 'Genjutsu') or
+        (player_char['strength'] == 'Ninjutsu' and opponent_char['strength'] == 'Taijutsu') or
+        (player_char['strength'] == 'Genjutsu' and opponent_char['strength'] == 'Ninjutsu')
+    ):
+        # Win!
+        result = "VICTORY"
+        winnings = BATTLE_COST * 2
+        result_emoji = "🏆"
+    else:
+        # Loss
+        result = "DEFEAT"
+        winnings = 0
+        result_emoji = "💔"
     
     result_text = (
-        f"🎰 **SLOT MACHINE** 🎰\n\n"
-        f"[ {reel1} | {reel2} | {reel3} ]\n\n"
-        f"{prize_text}\n"
-        f"Net: {'+' if net_gain >= 0 else ''}{net_gain} Ryo"
+        f"⚔️ **NINJA BATTLE ROYALE** ⚔️\n\n"
+        f"Your Fighter: {player_char['name']}\n"
+        f"Special Move: {player_char['special']}\n\n"
+        f"VS\n\n"
+        f"Opponent: {opponent_char['name']}\n"
+        f"Special Move: {opponent_char['special']}\n\n"
+        f"{result_emoji} **{result}!** {result_emoji}\n"
     )
     
-    return result_text, {'ryo': player['ryo'] - SLOT_COST + winnings}
-
-def play_dice_battle(player):
-    """Roll 2 dice, higher total wins."""
-    player_roll = random.randint(1, 6) + random.randint(1, 6)
-    bot_roll = random.randint(1, 6) + random.randint(1, 6)
-    
-    if player_roll > bot_roll:
-        winnings = int(DICE_COST * DICE_WIN_MULTIPLIER)
-        result_text = (
-            f"🎲 **DICE BATTLE** 🎲\n\n"
-            f"Your Roll: {player_roll}\n"
-            f"Bot Roll: {bot_roll}\n\n"
-            f"🎉 **YOU WIN!** +{winnings} Ryo"
-        )
-        updates = {'ryo': player['ryo'] - DICE_COST + winnings}
-    elif player_roll < bot_roll:
-        result_text = (
-            f"🎲 **DICE BATTLE** 🎲\n\n"
-            f"Your Roll: {player_roll}\n"
-            f"Bot Roll: {bot_roll}\n\n"
-            f"😢 **YOU LOSE!** -{DICE_COST} Ryo"
-        )
-        updates = {'ryo': player['ryo'] - DICE_COST}
-    else:
-        result_text = (
-            f"🎲 **DICE BATTLE** 🎲\n\n"
-            f"Your Roll: {player_roll}\n"
-            f"Bot Roll: {bot_roll}\n\n"
-            f"🤝 **TIE!** No money lost or gained."
-        )
+    if result == "VICTORY":
+        result_text += f"💰 You won {winnings} Ryo!"
+        updates = {'ryo': player['ryo'] - BATTLE_COST + winnings}
+    elif result == "DRAW":
+        result_text += f"🤝 No one wins! Ryo returned."
         updates = {}
-    
-    return result_text, updates
-
-def play_coin_flip(player, choice):
-    """Flip a coin, guess correctly to win."""
-    flip = random.choice(['Heads', 'Tails'])
-    
-    if choice.lower() == flip.lower():
-        result_text = (
-            f"🪙 **COIN FLIP** 🪙\n\n"
-            f"Result: {flip}\n"
-            f"Your Guess: {choice}\n\n"
-            f"✅ **CORRECT!** +{COINFLIP_WIN} Ryo"
-        )
-        updates = {'ryo': player['ryo'] - COINFLIP_COST + COINFLIP_WIN}
     else:
-        result_text = (
-            f"🪙 **COIN FLIP** 🪙\n\n"
-            f"Result: {flip}\n"
-            f"Your Guess: {choice}\n\n"
-            f"❌ **WRONG!** -{COINFLIP_COST} Ryo"
-        )
-        updates = {'ryo': player['ryo'] - COINFLIP_COST}
+        result_text += f"💸 You lost {BATTLE_COST} Ryo!"
+        updates = {'ryo': player['ryo'] - BATTLE_COST}
     
-    return result_text, updates
+    return result_text, updates, player_char['image']
 
-def play_scratch_card(player):
-    """Scratch a card for random prize."""
-    weights = [p[0] for p in SCRATCH_PRIZES]
-    prize = random.choices(SCRATCH_PRIZES, weights=weights, k=1)[0]
-    _, prize_ryo, prize_name = prize
+def play_akatsuki_encounter(player, member_key):
+    """Fight an Akatsuki member."""
+    member = AKATSUKI_MEMBERS[member_key]
+    player_power = player['level'] * 10 + gl.get_total_stats(player)['strength']
     
-    if prize_ryo > 0:
+    # Success based on difficulty and player power
+    base_chance = member['difficulty']
+    power_bonus = min(0.15, player_power / 1000)  # Max 15% bonus
+    success_chance = base_chance + power_bonus
+    
+    if random.random() < success_chance:
+        # Victory!
         result_text = (
-            f"🎫 **SCRATCH CARD** 🎫\n\n"
-            f"🎉 You won: **{prize_name}**!\n"
-            f"Net: +{prize_ryo - SCRATCH_COST} Ryo"
+            f"🔴 **AKATSUKI ENCOUNTER** 🔴\n\n"
+            f"Enemy: {member['name']}\n\n"
+            f"⚔️ An intense battle unfolds!\n"
+            f"Your determination and skill prevail!\n\n"
+            f"🏆 **VICTORY!**\n"
+            f"💰 Bounty: +{member['reward']} Ryo\n"
+            f"✨ +50 EXP gained!"
         )
-        updates = {'ryo': player['ryo'] - SCRATCH_COST + prize_ryo}
-    else:
-        result_text = (
-            f"🎫 **SCRATCH CARD** 🎫\n\n"
-            f"😢 No prize this time...\n"
-            f"Net: -{SCRATCH_COST} Ryo"
-        )
-        updates = {'ryo': player['ryo'] - SCRATCH_COST}
-    
-    return result_text, updates
-
-def play_ninja_roulette(player, bet_type, bet_value=None):
-    """Roulette with color/number betting."""
-    winning_number = random.choice(ROULETTE_NUMBERS)
-    
-    # Determine color
-    if winning_number in ROULETTE_COLORS['red']:
-        winning_color = 'red'
-        color_emoji = "🔴"
-    elif winning_number in ROULETTE_COLORS['black']:
-        winning_color = 'black'
-        color_emoji = "⚫"
-    else:
-        winning_color = 'green'
-        color_emoji = "🟢"
-    
-    won = False
-    winnings = 0
-    
-    if bet_type == 'color' and bet_value == winning_color:
-        won = True
-        winnings = ROULETTE_COST * 2  # 2x payout
-    elif bet_type == 'number' and bet_value == winning_number:
-        won = True
-        winnings = ROULETTE_COST * 35  # 35x payout (like real roulette!)
-    
-    if won:
-        result_text = (
-            f"🎰 **NINJA ROULETTE** 🎰\n\n"
-            f"Winning Number: {color_emoji} **{winning_number}**\n"
-            f"Your Bet: {bet_value}\n\n"
-            f"🎉 **YOU WIN!** +{winnings} Ryo"
-        )
-        updates = {'ryo': player['ryo'] - ROULETTE_COST + winnings}
-    else:
-        result_text = (
-            f"🎰 **NINJA ROULETTE** 🎰\n\n"
-            f"Winning Number: {color_emoji} **{winning_number}**\n"
-            f"Your Bet: {bet_value}\n\n"
-            f"😢 **YOU LOSE!** -{ROULETTE_COST} Ryo"
-        )
-        updates = {'ryo': player['ryo'] - ROULETTE_COST}
-    
-    return result_text, updates
-
-def play_treasure_hunt(player, choice):
-    """Mini RPG treasure hunt with 3 paths."""
-    paths = {
-        'cave': {
-            'outcomes': [
-                (50, 100, "🦇 You found a hidden stash! +100 Ryo"),
-                (30, 0, "🕷️ Spider trap! You escape but found nothing."),
-                (20, 200, "💎 Ancient treasure! +200 Ryo")
-            ]
-        },
-        'forest': {
-            'outcomes': [
-                (60, 50, "🌳 You found some herbs! +50 Ryo"),
-                (25, 150, "🦌 You helped a deer and it led you to treasure! +150 Ryo"),
-                (15, 0, "🐍 Snake attack! You barely escaped.")
-            ]
-        },
-        'temple': {
-            'outcomes': [
-                (40, 75, "🏛️ Small offering box. +75 Ryo"),
-                (40, 0, "⛩️ The temple is empty..."),
-                (20, 300, "📜 Ancient scroll with hidden Ryo! +300 Ryo")
-            ]
+        updates = {
+            'ryo': player['ryo'] - AKATSUKI_COST + member['reward'],
+            'exp': player['exp'] + 50,
+            'total_exp': player['total_exp'] + 50
         }
-    }
+    else:
+        # Defeat!
+        result_text = (
+            f"🔴 **AKATSUKI ENCOUNTER** 🔴\n\n"
+            f"Enemy: {member['name']}\n\n"
+            f"⚔️ You fought bravely but...\n"
+            f"The Akatsuki member was too powerful!\n\n"
+            f"💔 **DEFEATED!**\n"
+            f"💸 Lost: {AKATSUKI_COST} Ryo"
+        )
+        updates = {'ryo': player['ryo'] - AKATSUKI_COST}
     
-    if choice not in paths:
-        choice = 'cave'
+    return result_text, updates, member['image']
+
+def play_summoning_jutsu(player):
+    """Summon a creature with random rarity."""
+    weights = [c['rarity'] for c in SUMMON_CREATURES.values()]
+    summoned = random.choices(list(SUMMON_CREATURES.values()), weights=weights, k=1)[0]
     
-    weights = [o[0] for o in paths[choice]['outcomes']]
-    outcome = random.choices(paths[choice]['outcomes'], weights=weights, k=1)[0]
-    _, reward, message = outcome
+    if summoned['power'] == 0:
+        # Failed summoning
+        result_text = (
+            f"🐸 **SUMMONING JUTSU** 🐸\n\n"
+            f"You perform the hand signs...\n"
+            f"血 Blood offering made!\n\n"
+            f"💨 *POOF*\n\n"
+            f"❌ **SUMMONING FAILED!**\n"
+            f"Not enough chakra control!\n"
+            f"💸 Lost: {SUMMON_COST} Ryo"
+        )
+        updates = {'ryo': player['ryo'] - SUMMON_COST}
+        image = None
+    else:
+        # Successful summoning
+        result_text = (
+            f"🐸 **SUMMONING JUTSU** 🐸\n\n"
+            f"You perform the hand signs...\n"
+            f"血 Blood offering made!\n\n"
+            f"💨 *POOF*\n\n"
+            f"✨ **{summoned['name']} APPEARS!**\n"
+            f"Power Level: {summoned['power']:,}\n"
+            f"💰 Reward: +{summoned['power']} Ryo"
+        )
+        net_gain = summoned['power'] - SUMMON_COST
+        result_text += f"\nNet: {'+' if net_gain >= 0 else ''}{net_gain} Ryo"
+        updates = {'ryo': player['ryo'] - SUMMON_COST + summoned['power']}
+        image = summoned['image']
     
-    result_text = (
-        f"🗺️ **TREASURE HUNT** 🗺️\n\n"
-        f"You chose: **{choice.title()}**\n\n"
-        f"{message}\n"
-        f"Net: {'+' if reward - HUNT_COST >= 0 else ''}{reward - HUNT_COST} Ryo"
-    )
+    return result_text, updates, image
+
+def play_chunin_exam(player, stage_key):
+    """Take the Chunin Exam stages."""
+    stage = CHUNIN_STAGES[stage_key]
     
-    updates = {'ryo': player['ryo'] - HUNT_COST + reward}
+    # Success based on player level and stats
+    player_stats = gl.get_total_stats(player)
+    base_chance = stage['difficulty']
+    level_bonus = min(0.20, player['level'] / 100)  # Max 20% bonus
+    stat_bonus = min(0.10, player_stats['intelligence'] / 200)  # Max 10% bonus
+    
+    success_chance = base_chance + level_bonus + stat_bonus
+    
+    if random.random() < success_chance:
+        # Pass!
+        result_text = (
+            f"📜 **CHUNIN EXAM** 📜\n\n"
+            f"Stage: {stage['desc']}\n\n"
+            f"You demonstrate exceptional skill!\n\n"
+            f"✅ **PASSED!**\n"
+            f"💰 Reward: +{stage['reward']} Ryo\n"
+            f"✨ +30 EXP gained!"
+        )
+        updates = {
+            'ryo': player['ryo'] - CHUNIN_COST + stage['reward'],
+            'exp': player['exp'] + 30,
+            'total_exp': player['total_exp'] + 30
+        }
+    else:
+        # Failed!
+        result_text = (
+            f"📜 **CHUNIN EXAM** 📜\n\n"
+            f"Stage: {stage['desc']}\n\n"
+            f"Despite your efforts...\n\n"
+            f"❌ **FAILED!**\n"
+            f"Better luck next time!\n"
+            f"💸 Lost: {CHUNIN_COST} Ryo"
+        )
+        updates = {'ryo': player['ryo'] - CHUNIN_COST}
     
     return result_text, updates
+
+def play_tailed_beast_encounter(player):
+    """Encounter a random Tailed Beast."""
+    # Stronger beasts are rarer
+    weights = [10 - beast['power'] for beast in TAILED_BEASTS]
+    beast = random.choices(TAILED_BEASTS, weights=weights, k=1)[0]
+    
+    # Success chance decreases with beast power
+    player_power = player['level'] * 10 + gl.get_total_stats(player)['strength']
+    base_chance = 0.50 - (beast['power'] * 0.03)  # Gets harder for stronger beasts
+    power_bonus = min(0.25, player_power / 1000)
+    success_chance = max(0.10, base_chance + power_bonus)  # Min 10% chance
+    
+    if random.random() < success_chance:
+        # Victory!
+        result_text = (
+            f"🦊 **TAILED BEAST ENCOUNTER** 🦊\n\n"
+            f"You encountered: {beast['name']}\n"
+            f"Tails: {beast['power']} 🔥\n\n"
+            f"⚔️ Epic battle ensues!\n"
+            f"Your chakra clashes with the beast's!\n\n"
+            f"🏆 **VICTORY!**\n"
+            f"You sealed the beast temporarily!\n"
+            f"💰 Massive Reward: +{beast['reward']} Ryo\n"
+            f"✨ +100 EXP gained!"
+        )
+        updates = {
+            'ryo': player['ryo'] - TAILED_BEAST_COST + beast['reward'],
+            'exp': player['exp'] + 100,
+            'total_exp': player['total_exp'] + 100
+        }
+    else:
+        # Defeat!
+        result_text = (
+            f"🦊 **TAILED BEAST ENCOUNTER** 🦊\n\n"
+            f"You encountered: {beast['name']}\n"
+            f"Tails: {beast['power']} 🔥\n\n"
+            f"⚔️ The beast's power is overwhelming!\n"
+            f"You barely escape with your life!\n\n"
+            f"💔 **DEFEATED!**\n"
+            f"💸 Lost: {TAILED_BEAST_COST} Ryo"
+        )
+        updates = {'ryo': player['ryo'] - TAILED_BEAST_COST}
+    
+    return result_text, updates, beast['image']
 
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -354,7 +431,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             InlineQueryResultArticle(
                 id="wallet",
                 title="🥷 Show My Wallet (Flex!)",
-                description=f"Post your Lvl {player['level']} | {player['ryo']} Ryo | {player.get('kills', 0)} Kills card",
+                description=f"Post your Lvl {player['level']} | {player['ryo']} Ryo card",
                 input_message_content=InputTextMessageContent(wallet_text, parse_mode="HTML")
             )
         )
@@ -365,7 +442,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             InlineQueryResultArticle(
                 id="top_killers",
                 title="☠️ Show Top 5 Killers",
-                description="Post the 'Top Killers' leaderboard here.",
+                description="Post the 'Top Killers' leaderboard",
                 input_message_content=InputTextMessageContent(killers_text, parse_mode="HTML")
             )
         )
@@ -376,7 +453,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             InlineQueryResultArticle(
                 id="top_rich",
                 title="💰 Show Top 5 Richest",
-                description="Post the 'Top Richest' leaderboard here.",
+                description="Post the 'Top Richest' leaderboard",
                 input_message_content=InputTextMessageContent(rich_text, parse_mode="HTML")
             )
         )
@@ -403,9 +480,9 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 InlineQueryResultArticle(
                     id="daily_pack_claimed",
                     title="❌ Daily Pack on Cooldown",
-                    description=f"Come back in {remaining_hours}h {remaining_minutes}m.",
+                    description=f"Come back in {remaining_hours}h {remaining_minutes}m",
                     input_message_content=InputTextMessageContent(
-                        f"I've already claimed my daily pack. I can claim again in {remaining_hours}h {remaining_minutes}m."
+                        f"I've already claimed my daily pack. Come back in {remaining_hours}h {remaining_minutes}m!"
                     )
                 )
             )
@@ -416,159 +493,111 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             results.append(
                 InlineQueryResultArticle(
                     id="daily_pack_open",
-                    title="🎁 Open your Daily Shinobi Pack!",
-                    description=f"Get a free random reward! (Resets every {PACK_COOLDOWN_HOURS} hours)",
+                    title="🎁 Open Daily Shinobi Pack!",
+                    description=f"Free rewards every {PACK_COOLDOWN_HOURS} hours!",
                     input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
                 )
             )
         
-        # --- 🆕 5. SLOT MACHINE ---
+        # 🆕 EPIC NARUTO GAMES START HERE
+        
         if is_hosp:
             results.append(
                 InlineQueryResultArticle(
-                    id="slot_fail_hosp",
-                    title=f"❌ Cannot play while hospitalized",
-                    description="Use /heal to recover.",
-                    input_message_content=InputTextMessageContent("I can't play right now, I'm in the hospital!")
-                )
-            )
-        elif player['ryo'] < SLOT_COST:
-            results.append(
-                InlineQueryResultArticle(
-                    id="slot_fail_ryo",
-                    title=f"🎰 Slot Machine (Need {SLOT_COST} Ryo)",
-                    description="Not enough Ryo!",
-                    input_message_content=InputTextMessageContent(f"I need {SLOT_COST} Ryo to play the slots!")
+                    id="games_locked",
+                    title="❌ Cannot play while hospitalized!",
+                    description="Use /heal to recover first",
+                    input_message_content=InputTextMessageContent("I can't play games right now, I'm in the hospital! 🏥")
                 )
             )
         else:
-            result_text, updates = play_slot_machine(player)
-            db.update_player(user_id, updates)
-            results.append(
-                InlineQueryResultArticle(
-                    id=f"slot_{uuid.uuid4()}",
-                    title=f"🎰 Slot Machine (Cost: {SLOT_COST} Ryo)",
-                    description="Spin to win big! 3 matching = JACKPOT!",
-                    input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
+            # --- 5. Shadow Clone Training (4 difficulties) ---
+            if player['ryo'] >= CLONE_COST:
+                for diff_key, diff_data in CLONE_TRAINING.items():
+                    result_text, updates = play_shadow_clone_training(player, diff_key)
+                    db.update_player(user_id, updates)
+                    results.append(
+                        InlineQueryResultArticle(
+                            id=f"clone_{diff_key}_{uuid.uuid4()}",
+                            title=f"🌀 Shadow Clone: {diff_data['name']}",
+                            description=f"Cost: {CLONE_COST} Ryo | Reward: {diff_data['reward']} Ryo",
+                            input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
+                        )
+                    )
+            
+            # --- 6. Ninja Battle (3 characters) ---
+            if player['ryo'] >= BATTLE_COST:
+                for char_key, char_data in BATTLE_CHARACTERS.items():
+                    result_text, updates, image = play_ninja_battle(player, char_key)
+                    db.update_player(user_id, updates)
+                    results.append(
+                        InlineQueryResultPhoto(
+                            id=f"akatsuki_{member_key}_{uuid.uuid4()}",
+                            photo_url=image,
+                            thumbnail_url=image,
+                            title=f"🔴 Fight {member_data['name']}",
+                            description=f"Cost: {AKATSUKI_COST} Ryo | Reward: {member_data['reward']} Ryo",
+                            caption=result_text,
+                            parse_mode="HTML"
+                        )
+                    )
+            
+            # --- 8. Summoning Jutsu ---
+            if player['ryo'] >= SUMMON_COST:
+                result_text, updates, image = play_summoning_jutsu(player)
+                db.update_player(user_id, updates)
+                
+                if image:
+                    results.append(
+                        InlineQueryResultPhoto(
+                            id=f"summon_{uuid.uuid4()}",
+                            photo_url=image,
+                            thumbnail_url=image,
+                            title=f"🐸 Summoning Jutsu!",
+                            description=f"Cost: {SUMMON_COST} Ryo | Summon powerful allies!",
+                            caption=result_text,
+                            parse_mode="HTML"
+                        )
+                    )
+                else:
+                    results.append(
+                        InlineQueryResultArticle(
+                            id=f"summon_{uuid.uuid4()}",
+                            title=f"🐸 Summoning Jutsu!",
+                            description=f"Cost: {SUMMON_COST} Ryo | Summon powerful allies!",
+                            input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
+                        )
+                    )
+            
+            # --- 9. Chunin Exam (3 stages) ---
+            if player['ryo'] >= CHUNIN_COST:
+                for stage_key, stage_data in CHUNIN_STAGES.items():
+                    result_text, updates = play_chunin_exam(player, stage_key)
+                    db.update_player(user_id, updates)
+                    results.append(
+                        InlineQueryResultArticle(
+                            id=f"chunin_{stage_key}_{uuid.uuid4()}",
+                            title=f"📜 Chunin Exam: {stage_data['desc']}",
+                            description=f"Cost: {CHUNIN_COST} Ryo | Reward: {stage_data['reward']} Ryo",
+                            input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
+                        )
+                    )
+            
+            # --- 10. Tailed Beast Encounter ---
+            if player['ryo'] >= TAILED_BEAST_COST:
+                result_text, updates, image = play_tailed_beast_encounter(player)
+                db.update_player(user_id, updates)
+                results.append(
+                    InlineQueryResultPhoto(
+                        id=f"beast_{uuid.uuid4()}",
+                        photo_url=image,
+                        thumbnail_url=image,
+                        title=f"🦊 Tailed Beast Encounter!",
+                        description=f"Cost: {TAILED_BEAST_COST} Ryo | Epic battle!",
+                        caption=result_text,
+                        parse_mode="HTML"
+                    )
                 )
-            )
-        
-        # --- 🆕 6. DICE BATTLE ---
-        if not is_hosp and player['ryo'] >= DICE_COST:
-            result_text, updates = play_dice_battle(player)
-            db.update_player(user_id, updates)
-            results.append(
-                InlineQueryResultArticle(
-                    id=f"dice_{uuid.uuid4()}",
-                    title=f"🎲 Dice Battle (Cost: {DICE_COST} Ryo)",
-                    description="Roll 2 dice! Beat the bot to win!",
-                    input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
-                )
-            )
-        
-        # --- 🆕 7. COIN FLIP (Heads) ---
-        if not is_hosp and player['ryo'] >= COINFLIP_COST:
-            result_text_h, updates_h = play_coin_flip(player, 'Heads')
-            db.update_player(user_id, updates_h)
-            results.append(
-                InlineQueryResultArticle(
-                    id=f"coin_heads_{uuid.uuid4()}",
-                    title=f"🪙 Coin Flip: HEADS (Cost: {COINFLIP_COST} Ryo)",
-                    description="Guess correctly to win!",
-                    input_message_content=InputTextMessageContent(result_text_h, parse_mode="HTML")
-                )
-            )
-        
-        # --- 🆕 8. COIN FLIP (Tails) ---
-        if not is_hosp and player['ryo'] >= COINFLIP_COST:
-            result_text_t, updates_t = play_coin_flip(player, 'Tails')
-            db.update_player(user_id, updates_t)
-            results.append(
-                InlineQueryResultArticle(
-                    id=f"coin_tails_{uuid.uuid4()}",
-                    title=f"🪙 Coin Flip: TAILS (Cost: {COINFLIP_COST} Ryo)",
-                    description="Guess correctly to win!",
-                    input_message_content=InputTextMessageContent(result_text_t, parse_mode="HTML")
-                )
-            )
-        
-        # --- 🆕 9. SCRATCH CARD ---
-        if not is_hosp and player['ryo'] >= SCRATCH_COST:
-            result_text, updates = play_scratch_card(player)
-            db.update_player(user_id, updates)
-            results.append(
-                InlineQueryResultArticle(
-                    id=f"scratch_{uuid.uuid4()}",
-                    title=f"🎫 Scratch Card (Cost: {SCRATCH_COST} Ryo)",
-                    description="Instant win! Up to 1000 Ryo!",
-                    input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
-                )
-            )
-        
-        # --- 🆕 10. NINJA ROULETTE (Red) ---
-        if not is_hosp and player['ryo'] >= ROULETTE_COST:
-            result_text, updates = play_ninja_roulette(player, 'color', 'red')
-            db.update_player(user_id, updates)
-            results.append(
-                InlineQueryResultArticle(
-                    id=f"roulette_red_{uuid.uuid4()}",
-                    title=f"🎰 Roulette: Bet RED (Cost: {ROULETTE_COST} Ryo)",
-                    description="2x payout if red wins!",
-                    input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
-                )
-            )
-        
-        # --- 🆕 11. NINJA ROULETTE (Black) ---
-        if not is_hosp and player['ryo'] >= ROULETTE_COST:
-            result_text, updates = play_ninja_roulette(player, 'color', 'black')
-            db.update_player(user_id, updates)
-            results.append(
-                InlineQueryResultArticle(
-                    id=f"roulette_black_{uuid.uuid4()}",
-                    title=f"🎰 Roulette: Bet BLACK (Cost: {ROULETTE_COST} Ryo)",
-                    description="2x payout if black wins!",
-                    input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
-                )
-            )
-        
-        # --- 🆕 12. TREASURE HUNT (Cave) ---
-        if not is_hosp and player['ryo'] >= HUNT_COST:
-            result_text, updates = play_treasure_hunt(player, 'cave')
-            db.update_player(user_id, updates)
-            results.append(
-                InlineQueryResultArticle(
-                    id=f"hunt_cave_{uuid.uuid4()}",
-                    title=f"🗺️ Treasure Hunt: CAVE (Cost: {HUNT_COST} Ryo)",
-                    description="Explore a dark cave for treasure!",
-                    input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
-                )
-            )
-        
-        # --- 🆕 13. TREASURE HUNT (Forest) ---
-        if not is_hosp and player['ryo'] >= HUNT_COST:
-            result_text, updates = play_treasure_hunt(player, 'forest')
-            db.update_player(user_id, updates)
-            results.append(
-                InlineQueryResultArticle(
-                    id=f"hunt_forest_{uuid.uuid4()}",
-                    title=f"🗺️ Treasure Hunt: FOREST (Cost: {HUNT_COST} Ryo)",
-                    description="Search the dense forest!",
-                    input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
-                )
-            )
-        
-        # --- 🆕 14. TREASURE HUNT (Temple) ---
-        if not is_hosp and player['ryo'] >= HUNT_COST:
-            result_text, updates = play_treasure_hunt(player, 'temple')
-            db.update_player(user_id, updates)
-            results.append(
-                InlineQueryResultArticle(
-                    id=f"hunt_temple_{uuid.uuid4()}",
-                    title=f"🗺️ Treasure Hunt: TEMPLE (Cost: {HUNT_COST} Ryo)",
-                    description="Explore an ancient temple!",
-                    input_message_content=InputTextMessageContent(result_text, parse_mode="HTML")
-                )
-            )
             
     else:
         # --- Not registered ---
@@ -576,7 +605,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             InlineQueryResultArticle(
                 id="register",
                 title="❌ You are not registered!",
-                description="Click here to ask how to join.",
+                description="Click to ask how to join",
                 input_message_content=InputTextMessageContent(
                     f"Hey everyone, how do I /register for @{context.bot.username}?"
                 )
@@ -584,4 +613,21 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         )
 
     # cache_time=0 is important for games
-    await query.answer(results, cache_time=0)
+    await query.answer(results, cache_time=0)(
+                            id=f"battle_{char_key}_{uuid.uuid4()}",
+                            photo_url=image,
+                            thumbnail_url=image,
+                            title=f"⚔️ Fight as {char_data['name']}",
+                            description=f"Cost: {BATTLE_COST} Ryo | Win: {BATTLE_COST * 2} Ryo",
+                            caption=result_text,
+                            parse_mode="HTML"
+                        )
+                    )
+            
+            # --- 7. Akatsuki Encounters (4 members) ---
+            if player['ryo'] >= AKATSUKI_COST:
+                for member_key, member_data in AKATSUKI_MEMBERS.items():
+                    result_text, updates, image = play_akatsuki_encounter(player, member_key)
+                    db.update_player(user_id, updates)
+                    results.append(
+                        InlineQueryResultPhoto
