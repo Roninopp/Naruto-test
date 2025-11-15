@@ -103,8 +103,6 @@ TAILED_BEASTS = [
     {'name': 'Kurama (Nine-Tails)', 'image': 'https://i.imgur.com/nB6Hk2R.jpg', 'power': 9, 'reward': 2500}
 ]
 
-# ----------------------------
-
 def get_wallet_text(player):
     """Generates the HTML text for a player's wallet card."""
     is_hosp, _ = gl.get_hospital_status(player)
@@ -170,14 +168,11 @@ def get_daily_pack_prize(player):
 
     return result_text, updates
 
-# 🆕 EPIC NARUTO GAME FUNCTIONS
-
 def play_shadow_clone_training(player, difficulty):
     """Train with shadow clones at different difficulty levels."""
     training = CLONE_TRAINING[difficulty]
     
     if random.random() < training['success']:
-        # Success!
         result_text = (
             f"🌀 **SHADOW CLONE TRAINING** 🌀\n\n"
             f"Difficulty: {training['name']}\n\n"
@@ -188,7 +183,6 @@ def play_shadow_clone_training(player, difficulty):
         )
         updates = {'ryo': player['ryo'] - CLONE_COST + training['reward']}
     else:
-        # Failed!
         result_text = (
             f"🌀 **SHADOW CLONE TRAINING** 🌀\n\n"
             f"Difficulty: {training['name']}\n\n"
@@ -206,9 +200,7 @@ def play_ninja_battle(player, choice):
     opponent_choice = random.choice(list(BATTLE_CHARACTERS.keys()))
     opponent_char = BATTLE_CHARACTERS[opponent_choice]
     
-    # Determine winner
     if choice == opponent_choice:
-        # Draw
         result = "DRAW"
         winnings = 0
         result_emoji = "🤝"
@@ -217,12 +209,10 @@ def play_ninja_battle(player, choice):
         (player_char['strength'] == 'Ninjutsu' and opponent_char['strength'] == 'Taijutsu') or
         (player_char['strength'] == 'Genjutsu' and opponent_char['strength'] == 'Ninjutsu')
     ):
-        # Win!
         result = "VICTORY"
         winnings = BATTLE_COST * 2
         result_emoji = "🏆"
     else:
-        # Loss
         result = "DEFEAT"
         winnings = 0
         result_emoji = "💔"
@@ -254,13 +244,11 @@ def play_akatsuki_encounter(player, member_key):
     member = AKATSUKI_MEMBERS[member_key]
     player_power = player['level'] * 10 + gl.get_total_stats(player)['strength']
     
-    # Success based on difficulty and player power
     base_chance = member['difficulty']
-    power_bonus = min(0.15, player_power / 1000)  # Max 15% bonus
+    power_bonus = min(0.15, player_power / 1000)
     success_chance = base_chance + power_bonus
     
     if random.random() < success_chance:
-        # Victory!
         result_text = (
             f"🔴 **AKATSUKI ENCOUNTER** 🔴\n\n"
             f"Enemy: {member['name']}\n\n"
@@ -276,7 +264,6 @@ def play_akatsuki_encounter(player, member_key):
             'total_exp': player['total_exp'] + 50
         }
     else:
-        # Defeat!
         result_text = (
             f"🔴 **AKATSUKI ENCOUNTER** 🔴\n\n"
             f"Enemy: {member['name']}\n\n"
@@ -295,7 +282,6 @@ def play_summoning_jutsu(player):
     summoned = random.choices(list(SUMMON_CREATURES.values()), weights=weights, k=1)[0]
     
     if summoned['power'] == 0:
-        # Failed summoning
         result_text = (
             f"🐸 **SUMMONING JUTSU** 🐸\n\n"
             f"You perform the hand signs...\n"
@@ -308,7 +294,6 @@ def play_summoning_jutsu(player):
         updates = {'ryo': player['ryo'] - SUMMON_COST}
         image = None
     else:
-        # Successful summoning
         result_text = (
             f"🐸 **SUMMONING JUTSU** 🐸\n\n"
             f"You perform the hand signs...\n"
@@ -329,16 +314,14 @@ def play_chunin_exam(player, stage_key):
     """Take the Chunin Exam stages."""
     stage = CHUNIN_STAGES[stage_key]
     
-    # Success based on player level and stats
     player_stats = gl.get_total_stats(player)
     base_chance = stage['difficulty']
-    level_bonus = min(0.20, player['level'] / 100)  # Max 20% bonus
-    stat_bonus = min(0.10, player_stats['intelligence'] / 200)  # Max 10% bonus
+    level_bonus = min(0.20, player['level'] / 100)
+    stat_bonus = min(0.10, player_stats['intelligence'] / 200)
     
     success_chance = base_chance + level_bonus + stat_bonus
     
     if random.random() < success_chance:
-        # Pass!
         result_text = (
             f"📜 **CHUNIN EXAM** 📜\n\n"
             f"Stage: {stage['desc']}\n\n"
@@ -353,7 +336,6 @@ def play_chunin_exam(player, stage_key):
             'total_exp': player['total_exp'] + 30
         }
     else:
-        # Failed!
         result_text = (
             f"📜 **CHUNIN EXAM** 📜\n\n"
             f"Stage: {stage['desc']}\n\n"
@@ -368,18 +350,15 @@ def play_chunin_exam(player, stage_key):
 
 def play_tailed_beast_encounter(player):
     """Encounter a random Tailed Beast."""
-    # Stronger beasts are rarer
     weights = [10 - beast['power'] for beast in TAILED_BEASTS]
     beast = random.choices(TAILED_BEASTS, weights=weights, k=1)[0]
     
-    # Success chance decreases with beast power
     player_power = player['level'] * 10 + gl.get_total_stats(player)['strength']
-    base_chance = 0.50 - (beast['power'] * 0.03)  # Gets harder for stronger beasts
+    base_chance = 0.50 - (beast['power'] * 0.03)
     power_bonus = min(0.25, player_power / 1000)
-    success_chance = max(0.10, base_chance + power_bonus)  # Min 10% chance
+    success_chance = max(0.10, base_chance + power_bonus)
     
     if random.random() < success_chance:
-        # Victory!
         result_text = (
             f"🦊 **TAILED BEAST ENCOUNTER** 🦊\n\n"
             f"You encountered: {beast['name']}\n"
@@ -397,7 +376,6 @@ def play_tailed_beast_encounter(player):
             'total_exp': player['total_exp'] + 100
         }
     else:
-        # Defeat!
         result_text = (
             f"🦊 **TAILED BEAST ENCOUNTER** 🦊\n\n"
             f"You encountered: {beast['name']}\n"
@@ -410,7 +388,6 @@ def play_tailed_beast_encounter(player):
         updates = {'ryo': player['ryo'] - TAILED_BEAST_COST}
     
     return result_text, updates, beast['image']
-
 
 async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles all inline queries (@BotName ...)."""
@@ -425,7 +402,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     if player:
         is_hosp, _ = gl.get_hospital_status(player)
         
-        # --- 1. Show My Wallet ---
         wallet_text = get_wallet_text(player)
         results.append(
             InlineQueryResultArticle(
@@ -436,7 +412,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         )
         
-        # --- 2. Show Top Killers ---
         killers_text = get_top_killers_text()
         results.append(
             InlineQueryResultArticle(
@@ -447,7 +422,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         )
         
-        # --- 3. Show Top Richest ---
         rich_text = get_top_rich_text()
         results.append(
             InlineQueryResultArticle(
@@ -458,7 +432,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         )
         
-        # --- 4. Daily Shinobi Pack ---
         now = datetime.datetime.now(timezone.utc)
         last_claim_time = player.get('inline_pack_cooldown')
         
@@ -499,8 +472,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
             )
         
-        # 🆕 EPIC NARUTO GAMES START HERE
-        
         if is_hosp:
             results.append(
                 InlineQueryResultArticle(
@@ -511,7 +482,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
             )
         else:
-            # --- 5. Shadow Clone Training (4 difficulties) ---
             if player['ryo'] >= CLONE_COST:
                 for diff_key, diff_data in CLONE_TRAINING.items():
                     result_text, updates = play_shadow_clone_training(player, diff_key)
@@ -525,10 +495,25 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         )
                     )
             
-            # --- 6. Ninja Battle (3 characters) ---
             if player['ryo'] >= BATTLE_COST:
                 for char_key, char_data in BATTLE_CHARACTERS.items():
                     result_text, updates, image = play_ninja_battle(player, char_key)
+                    db.update_player(user_id, updates)
+                    results.append(
+                        InlineQueryResultPhoto(
+                            id=f"battle_{char_key}_{uuid.uuid4()}",
+                            photo_url=image,
+                            thumbnail_url=image,
+                            title=f"⚔️ Fight as {char_data['name']}",
+                            description=f"Cost: {BATTLE_COST} Ryo | Win: {BATTLE_COST * 2} Ryo",
+                            caption=result_text,
+                            parse_mode="HTML"
+                        )
+                    )
+            
+            if player['ryo'] >= AKATSUKI_COST:
+                for member_key, member_data in AKATSUKI_MEMBERS.items():
+                    result_text, updates, image = play_akatsuki_encounter(player, member_key)
                     db.update_player(user_id, updates)
                     results.append(
                         InlineQueryResultPhoto(
@@ -542,7 +527,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         )
                     )
             
-            # --- 8. Summoning Jutsu ---
             if player['ryo'] >= SUMMON_COST:
                 result_text, updates, image = play_summoning_jutsu(player)
                 db.update_player(user_id, updates)
@@ -569,7 +553,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         )
                     )
             
-            # --- 9. Chunin Exam (3 stages) ---
             if player['ryo'] >= CHUNIN_COST:
                 for stage_key, stage_data in CHUNIN_STAGES.items():
                     result_text, updates = play_chunin_exam(player, stage_key)
@@ -583,7 +566,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         )
                     )
             
-            # --- 10. Tailed Beast Encounter ---
             if player['ryo'] >= TAILED_BEAST_COST:
                 result_text, updates, image = play_tailed_beast_encounter(player)
                 db.update_player(user_id, updates)
@@ -600,7 +582,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
             
     else:
-        # --- Not registered ---
         results.append(
             InlineQueryResultArticle(
                 id="register",
@@ -612,22 +593,4 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         )
 
-    # cache_time=0 is important for games
-    await query.answer(results, cache_time=0)(
-                            id=f"battle_{char_key}_{uuid.uuid4()}",
-                            photo_url=image,
-                            thumbnail_url=image,
-                            title=f"⚔️ Fight as {char_data['name']}",
-                            description=f"Cost: {BATTLE_COST} Ryo | Win: {BATTLE_COST * 2} Ryo",
-                            caption=result_text,
-                            parse_mode="HTML"
-                        )
-                    )
-            
-            # --- 7. Akatsuki Encounters (4 members) ---
-            if player['ryo'] >= AKATSUKI_COST:
-                for member_key, member_data in AKATSUKI_MEMBERS.items():
-                    result_text, updates, image = play_akatsuki_encounter(player, member_key)
-                    db.update_player(user_id, updates)
-                    results.append(
-                        InlineQueryResultPhoto
+    await query.answer(results, cache_time=0)
