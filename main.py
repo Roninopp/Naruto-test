@@ -168,7 +168,7 @@ async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     eq_text = "\n".join([f"<b>{s.title()}:</b> {gl.SHOP_INVENTORY[eq[s]]['name'] if eq.get(s) else 'None'}" for s in ['weapon','armor','accessory']])
     
     txt = (
-        f"--- 👤 NINJA PROFILE 👤 ---\n"
+        f"--- 💤 NINJA PROFILE 💤 ---\n"
         f"<b>Name:</b> {player['username']}\n"
         f"<b>Village:</b> {player['village']}\n"
         f"<b>Rank:</b> {player['rank']}\n"
@@ -279,30 +279,11 @@ def main():
     
     # Inline Handler
     app.add_handler(InlineQueryHandler(inline_handler.inline_query_handler))
-    # Add this line to your imports section in main.py:
-# (Find the line where you import inline_handler and add this)
-
-# After this line:
-# import inline_handler
-
-# Add this line to register the game callback handler in the main() function:
-# (Find where you add handlers and add this BEFORE the global callbacks section)
-
-# Around line 180-190, ADD THIS:
-app.add_handler(CallbackQueryHandler(inline_handler.jutsu_game_callback, pattern="^jutsu_game_"))
-
-# It should look like this in context:
-"""
-    # Inline Handler
-    app.add_handler(InlineQueryHandler(inline_handler.inline_query_handler))
     
-    # 🆕 ADD THIS LINE:
+    # 🆕 ADD THIS LINE - Jutsu Game Callback Handler
     app.add_handler(CallbackQueryHandler(inline_handler.jutsu_game_callback, pattern="^jutsu_game_"))
     
     # Passive Handlers
-    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_chat_members))
-"""
-    # ✅ FIX: MEMERS → MEMBERS
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_chat_members))
     
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & (~filters.COMMAND) & (~filters.StatusUpdate.NEW_CHAT_MEMBERS), akatsuki_event.passive_group_register), group=-1)
