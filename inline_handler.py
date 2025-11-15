@@ -24,75 +24,75 @@ PACK_LOOT_TABLE = [
 ]
 PACK_COOLDOWN_HOURS = 4
 
-# 🎮 INTERACTIVE GAME ENEMIES
+# 🎮 INTERACTIVE GAME ENEMIES - Simplified with short keys
 GAME_ENEMIES = {
-    'zabuza': {
+    'z': {  # zabuza
         'name': 'Zabuza Momochi',
         'image': '⚔️',
         'hp': 100,
         'attacks': {
-            'water_dragon': {'name': 'Water Dragon', 'power': 40, 'weak_to': ['lightning'], 'strong_vs': ['fire']},
-            'hidden_mist': {'name': 'Hidden Mist', 'power': 30, 'weak_to': ['wind'], 'strong_vs': ['none']}
+            'wd': {'name': 'Water Dragon', 'power': 40, 'weak_to': ['l'], 'strong_vs': ['f']},
+            'hm': {'name': 'Hidden Mist', 'power': 30, 'weak_to': ['w'], 'strong_vs': []}
         },
-        'weakness': 'lightning',
+        'weakness': 'l',
         'reward': 200
     },
-    'sound_ninja': {
+    's': {  # sound_ninja
         'name': 'Sound Ninja Quartet',
         'image': '🎵',
         'hp': 80,
         'attacks': {
-            'sound_wave': {'name': 'Sound Wave', 'power': 25, 'weak_to': ['none'], 'strong_vs': ['none']},
-            'curse_mark': {'name': 'Curse Mark', 'power': 35, 'weak_to': ['medical'], 'strong_vs': ['taijutsu']}
+            'sw': {'name': 'Sound Wave', 'power': 25, 'weak_to': [], 'strong_vs': []},
+            'cm': {'name': 'Curse Mark', 'power': 35, 'weak_to': ['m'], 'strong_vs': ['t']}
         },
-        'weakness': 'genjutsu',
+        'weakness': 'g',
         'reward': 150
     },
-    'itachi': {
+    'i': {  # itachi
         'name': 'Itachi Uchiha',
         'image': '🔴',
         'hp': 150,
         'attacks': {
-            'amaterasu': {'name': 'Amaterasu', 'power': 60, 'weak_to': ['wind'], 'strong_vs': ['water']},
-            'tsukuyomi': {'name': 'Tsukuyomi', 'power': 50, 'weak_to': ['sharingan'], 'strong_vs': ['genjutsu']}
+            'am': {'name': 'Amaterasu', 'power': 60, 'weak_to': ['w'], 'strong_vs': ['wa']},
+            'ts': {'name': 'Tsukuyomi', 'power': 50, 'weak_to': ['sh'], 'strong_vs': ['g']}
         },
-        'weakness': 'none',
+        'weakness': '',
         'reward': 500
     },
-    'orochimaru': {
+    'o': {  # orochimaru
         'name': 'Orochimaru',
         'image': '🐍',
         'hp': 120,
         'attacks': {
-            'snake_summon': {'name': 'Giant Snakes', 'power': 45, 'weak_to': ['fire'], 'strong_vs': ['earth']},
-            'curse_seal': {'name': 'Curse Seal', 'power': 40, 'weak_to': ['medical'], 'strong_vs': ['none']}
+            'ss': {'name': 'Giant Snakes', 'power': 45, 'weak_to': ['f'], 'strong_vs': ['e']},
+            'cs': {'name': 'Curse Seal', 'power': 40, 'weak_to': ['m'], 'strong_vs': []}
         },
-        'weakness': 'medical',
+        'weakness': 'm',
         'reward': 300
     },
-    'akatsuki_grunt': {
+    'a': {  # akatsuki
         'name': 'Akatsuki Member',
         'image': '☁️',
         'hp': 90,
         'attacks': {
-            'kunai_barrage': {'name': 'Kunai Barrage', 'power': 30, 'weak_to': ['none'], 'strong_vs': ['none']},
-            'explosive_tags': {'name': 'Explosive Tags', 'power': 35, 'weak_to': ['substitution'], 'strong_vs': ['taijutsu']}
+            'kb': {'name': 'Kunai Barrage', 'power': 30, 'weak_to': [], 'strong_vs': []},
+            'et': {'name': 'Explosive Tags', 'power': 35, 'weak_to': ['su'], 'strong_vs': ['t']}
         },
-        'weakness': 'ninjutsu',
+        'weakness': 'n',
         'reward': 180
     }
 }
 
-# Player Jutsu Options
+# Player Jutsu Options - Simplified with short keys
 PLAYER_JUTSUS = {
-    'fireball': {'name': '🔥 Fireball Jutsu', 'type': 'fire', 'power': 35},
-    'shadow_clone': {'name': '🌀 Shadow Clone', 'type': 'ninjutsu', 'power': 30},
-    'substitution': {'name': '🍃 Substitution', 'type': 'escape', 'power': 0},  # Defensive
-    'water_dragon': {'name': '🌊 Water Dragon', 'type': 'water', 'power': 40},
-    'lightning_blade': {'name': '⚡ Lightning Blade', 'type': 'lightning', 'power': 45},
-    'rasengan': {'name': '💫 Rasengan', 'type': 'ninjutsu', 'power': 50},
-    'medical_ninjutsu': {'name': '💚 Medical Ninjutsu', 'type': 'medical', 'power': 0},  # Heal
-    'genjutsu': {'name': '👁️ Genjutsu', 'type': 'genjutsu', 'power': 35}
+    'f': {'name': '🔥 Fireball', 'type': 'f', 'power': 35},
+    'sc': {'name': '🌀 Clone', 'type': 'n', 'power': 30},
+    'su': {'name': '🍃 Substitution', 'type': 'e', 'power': 0},
+    'wa': {'name': '🌊 Water Dragon', 'type': 'wa', 'power': 40},
+    'l': {'name': '⚡ Lightning', 'type': 'l', 'power': 45},
+    'r': {'name': '💫 Rasengan', 'type': 'n', 'power': 50},
+    'm': {'name': '💚 Medical', 'type': 'm', 'power': 0},
+    'g': {'name': '👁️ Genjutsu', 'type': 'g', 'power': 35}
 }
 
 def get_wallet_text(player):
@@ -225,12 +225,12 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
             )
         
-        # 🎮 INTERACTIVE JUTSU BATTLE GAMES
+        # 🎮 INTERACTIVE JUTSU BATTLE GAMES - Fixed callback data length
         if not is_hosp and player['ryo'] >= 50:
             # Show different enemy options
-            for enemy_key, enemy_data in list(GAME_ENEMIES.items())[:3]:  # Show 3 enemies
-                # Create game start message with buttons
-                game_id = f"{user_id}_{enemy_key}_{uuid.uuid4().hex[:8]}"
+            for enemy_key, enemy_data in list(GAME_ENEMIES.items())[:3]:
+                # Generate short game ID (8 chars max)
+                game_id = uuid.uuid4().hex[:6]
                 
                 start_text = (
                     f"🎮 **NINJA BATTLE!** 🎮\n\n"
@@ -240,43 +240,44 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     f"Choose your jutsu wisely!"
                 )
                 
-                # Create jutsu selection buttons
+                # Create jutsu selection buttons with SHORT callback data
+                # Format: jg_{game_id}_{jutsu}_{enemy}
                 keyboard = [
                     [
                         InlineKeyboardButton(
-                            PLAYER_JUTSUS['fireball']['name'],
-                            callback_data=f"jutsu_game_{game_id}_fireball_{enemy_key}"
+                            PLAYER_JUTSUS['f']['name'],
+                            callback_data=f"jg_{game_id}_f_{enemy_key}"
                         ),
                         InlineKeyboardButton(
-                            PLAYER_JUTSUS['shadow_clone']['name'],
-                            callback_data=f"jutsu_game_{game_id}_shadow_clone_{enemy_key}"
+                            PLAYER_JUTSUS['sc']['name'],
+                            callback_data=f"jg_{game_id}_sc_{enemy_key}"
                         )
                     ],
                     [
                         InlineKeyboardButton(
-                            PLAYER_JUTSUS['water_dragon']['name'],
-                            callback_data=f"jutsu_game_{game_id}_water_dragon_{enemy_key}"
+                            PLAYER_JUTSUS['wa']['name'],
+                            callback_data=f"jg_{game_id}_wa_{enemy_key}"
                         ),
                         InlineKeyboardButton(
-                            PLAYER_JUTSUS['lightning_blade']['name'],
-                            callback_data=f"jutsu_game_{game_id}_lightning_blade_{enemy_key}"
+                            PLAYER_JUTSUS['l']['name'],
+                            callback_data=f"jg_{game_id}_l_{enemy_key}"
                         )
                     ],
                     [
                         InlineKeyboardButton(
-                            PLAYER_JUTSUS['rasengan']['name'],
-                            callback_data=f"jutsu_game_{game_id}_rasengan_{enemy_key}"
+                            PLAYER_JUTSUS['r']['name'],
+                            callback_data=f"jg_{game_id}_r_{enemy_key}"
                         ),
                         InlineKeyboardButton(
-                            PLAYER_JUTSUS['genjutsu']['name'],
-                            callback_data=f"jutsu_game_{game_id}_genjutsu_{enemy_key}"
+                            PLAYER_JUTSUS['g']['name'],
+                            callback_data=f"jg_{game_id}_g_{enemy_key}"
                         )
                     ]
                 ]
                 
                 results.append(
                     InlineQueryResultArticle(
-                        id=f"game_{enemy_key}_{uuid.uuid4().hex[:8]}",
+                        id=f"game_{enemy_key}_{game_id}",
                         title=f"🎮 Battle {enemy_data['name']}!",
                         description=f"Cost: 50 Ryo | Reward: {enemy_data['reward']} Ryo",
                         input_message_content=InputTextMessageContent(start_text, parse_mode="HTML"),
@@ -307,19 +308,14 @@ async def jutsu_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     
-    # Parse callback data: jutsu_game_{user_id}_{enemy_key}_{uuid}_{jutsu}_{enemy}
+    # Parse callback data: jg_{game_id}_{jutsu}_{enemy}
     parts = query.data.split('_')
-    if len(parts) < 6:
+    if len(parts) < 4:
         return
     
-    user_id_from_game = int(parts[2])
-    jutsu_choice = parts[4]
-    enemy_key = parts[5]
-    
-    # Verify it's the right player
-    if query.from_user.id != user_id_from_game:
-        await query.answer("This is not your game!", show_alert=True)
-        return
+    game_id = parts[1]
+    jutsu_choice = parts[2]
+    enemy_key = parts[3]
     
     player = db.get_player(query.from_user.id)
     if not player or player['ryo'] < 50:
@@ -327,8 +323,12 @@ async def jutsu_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     
     # Get enemy and player jutsu
-    enemy_data = GAME_ENEMIES[enemy_key]
-    player_jutsu = PLAYER_JUTSUS[jutsu_choice]
+    enemy_data = GAME_ENEMIES.get(enemy_key)
+    player_jutsu = PLAYER_JUTSUS.get(jutsu_choice)
+    
+    if not enemy_data or not player_jutsu:
+        await query.answer("Invalid game data!", show_alert=True)
+        return
     
     # Enemy chooses random attack
     enemy_attack_key = random.choice(list(enemy_data['attacks'].keys()))
@@ -339,14 +339,13 @@ async def jutsu_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     enemy_damage = enemy_attack['power']
     
     # Type effectiveness
+    effectiveness_text = ""
     if player_jutsu['type'] == enemy_data['weakness']:
         player_damage = int(player_damage * 1.5)
         effectiveness_text = "💥 Super effective!"
     elif player_jutsu['type'] in enemy_attack.get('weak_to', []):
         player_damage = int(player_damage * 0.5)
-        effectiveness_text = "😔 Not very effective..."
-    else:
-        effectiveness_text = ""
+        effectiveness_text = "😕 Not very effective..."
     
     # Determine winner
     player_hp = 100 - enemy_damage
