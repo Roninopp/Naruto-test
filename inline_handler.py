@@ -254,7 +254,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                         description=f"Cost: 50 Ryo | Reward: {enemy_data['reward']} Ryo",
                         input_message_content=InputTextMessageContent(start_text, parse_mode="HTML"),
                         reply_markup=InlineKeyboardMarkup(keyboard),
-                        thumb_url=enemy_data['image']
+                        thumbnail_url=enemy_data['image']
                     )
                 )
         
