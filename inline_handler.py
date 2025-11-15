@@ -24,15 +24,15 @@ PACK_LOOT_TABLE = [
 ]
 PACK_COOLDOWN_HOURS = 4
 
-# 🎮 INTERACTIVE GAME ENEMIES - Simplified with short keys
+# 🎮 INTERACTIVE GAME ENEMIES - Balanced for better gameplay
 GAME_ENEMIES = {
     'z': {  # zabuza
         'name': 'Zabuza Momochi',
         'image': '⚔️',
-        'hp': 100,
+        'hp': 70,  # Reduced from 100
         'attacks': {
-            'wd': {'name': 'Water Dragon', 'power': 40, 'weak_to': ['l'], 'strong_vs': ['f']},
-            'hm': {'name': 'Hidden Mist', 'power': 30, 'weak_to': ['w'], 'strong_vs': []}
+            'wd': {'name': 'Water Dragon', 'power': 30, 'weak_to': ['l'], 'strong_vs': ['f']},  # Reduced from 40
+            'hm': {'name': 'Hidden Mist', 'power': 25, 'weak_to': ['w'], 'strong_vs': []}  # Reduced from 30
         },
         'weakness': 'l',
         'reward': 200
@@ -40,21 +40,21 @@ GAME_ENEMIES = {
     's': {  # sound_ninja
         'name': 'Sound Ninja Quartet',
         'image': '🎵',
-        'hp': 80,
+        'hp': 60,  # Reduced from 80
         'attacks': {
-            'sw': {'name': 'Sound Wave', 'power': 25, 'weak_to': [], 'strong_vs': []},
-            'cm': {'name': 'Curse Mark', 'power': 35, 'weak_to': ['m'], 'strong_vs': ['t']}
+            'sw': {'name': 'Sound Wave', 'power': 20, 'weak_to': [], 'strong_vs': []},  # Reduced from 25
+            'cm': {'name': 'Curse Mark', 'power': 28, 'weak_to': ['m'], 'strong_vs': ['t']}  # Reduced from 35
         },
         'weakness': 'g',
         'reward': 150
     },
-    'i': {  # itachi
+    'i': {  # itachi - HARD BOSS
         'name': 'Itachi Uchiha',
         'image': '🔴',
-        'hp': 150,
+        'hp': 100,  # Reduced from 150
         'attacks': {
-            'am': {'name': 'Amaterasu', 'power': 60, 'weak_to': ['w'], 'strong_vs': ['wa']},
-            'ts': {'name': 'Tsukuyomi', 'power': 50, 'weak_to': ['sh'], 'strong_vs': ['g']}
+            'am': {'name': 'Amaterasu', 'power': 45, 'weak_to': ['w'], 'strong_vs': ['wa']},  # Reduced from 60
+            'ts': {'name': 'Tsukuyomi', 'power': 40, 'weak_to': ['sh'], 'strong_vs': ['g']}  # Reduced from 50
         },
         'weakness': '',
         'reward': 500
@@ -62,10 +62,10 @@ GAME_ENEMIES = {
     'o': {  # orochimaru
         'name': 'Orochimaru',
         'image': '🐍',
-        'hp': 120,
+        'hp': 80,  # Reduced from 120
         'attacks': {
-            'ss': {'name': 'Giant Snakes', 'power': 45, 'weak_to': ['f'], 'strong_vs': ['e']},
-            'cs': {'name': 'Curse Seal', 'power': 40, 'weak_to': ['m'], 'strong_vs': []}
+            'ss': {'name': 'Giant Snakes', 'power': 35, 'weak_to': ['f'], 'strong_vs': ['e']},  # Reduced from 45
+            'cs': {'name': 'Curse Seal', 'power': 32, 'weak_to': ['m'], 'strong_vs': []}  # Reduced from 40
         },
         'weakness': 'm',
         'reward': 300
@@ -73,10 +73,10 @@ GAME_ENEMIES = {
     'a': {  # akatsuki
         'name': 'Akatsuki Member',
         'image': '☁️',
-        'hp': 90,
+        'hp': 65,  # Reduced from 90
         'attacks': {
-            'kb': {'name': 'Kunai Barrage', 'power': 30, 'weak_to': [], 'strong_vs': []},
-            'et': {'name': 'Explosive Tags', 'power': 35, 'weak_to': ['su'], 'strong_vs': ['t']}
+            'kb': {'name': 'Kunai Barrage', 'power': 25, 'weak_to': [], 'strong_vs': []},  # Reduced from 30
+            'et': {'name': 'Explosive Tags', 'power': 28, 'weak_to': ['su'], 'strong_vs': ['t']}  # Reduced from 35
         },
         'weakness': 'n',
         'reward': 180
