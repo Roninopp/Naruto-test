@@ -44,17 +44,24 @@ MILESTONE_MESSAGES = {
 # --- 3. The Main Handler ---
 async def on_chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Listens to every group message to track chat activity."""
+    
+    # ✅ FIX 1: Make sure update has a message
+    if not update.message or not update.message.text:
+        return
+    
     user = update.effective_user
     chat_id = update.effective_chat.id
 
-    if user.is_bot: return
+    # ✅ FIX 2: Ignore bots
+    if user.is_bot:
+        return
 
-    # --- DEBUG LOG: Uncomment this if it still doesn't work to see every message ---
-    # logger.info(f"Chat event received from {user.id} in {chat_id}")
-
+    # ✅ FIX 3: Get player data
     player = db.get_player(user.id)
-    if not player: return 
+    if not player:
+        return
 
+    # ✅ FIX 4: Use date objects consistently
     today = datetime.date.today()
     activity = db.get_chat_activity(user.id, chat_id)
     
@@ -62,71 +69,108 @@ async def on_chat_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     last_milestone = 0
 
     if not activity:
+        # First time seeing this user in this chat today
         db.create_chat_activity(user.id, chat_id, today)
         current_count = 1
+        last_milestone = 0
     else:
-        # --- FIX: Ensure we are comparing dates correctly ---
+        # ✅ FIX 5: Handle date conversion properly
         last_date = activity['last_active_date']
-        # If it came from DB as a string (common with some setups), convert it
+        
+        # Convert string to date if needed
         if isinstance(last_date, str):
             try:
                 last_date = datetime.date.fromisoformat(last_date)
-            except ValueError:
-                last_date = today # Fallback if bad data
-
+            except (ValueError, TypeError):
+                last_date = today
+        
+        # Check if it's a new day
         if last_date < today:
-            # New day, reset
+            # New day, reset counters
             db.reset_chat_activity(user.id, chat_id, today)
             current_count = 1
             last_milestone = 0
         else:
             # Same day, increment
             current_count = db.increment_chat_activity(user.id, chat_id)
-            last_milestone = activity['last_reward_milestone']
+            last_milestone = activity.get('last_reward_milestone', 0)
+            
+            # ✅ FIX 6: Handle None return from increment
+            if current_count is None:
+                current_count = activity.get('message_count', 0) + 1
 
-    # Fallback if DB increment failed returning None
-    if not current_count and activity: 
-         current_count = activity.get('message_count', 0) + 1
+    # ✅ FIX 7: Better logging for debugging
+    logger.debug(f"Chat activity: User {user.id} in chat {chat_id} - Count: {current_count}, Last milestone: {last_milestone}")
 
     # --- Reward Check ---
-    next_milestone = 0
-    for m in sorted(REWARD_MILESTONES.keys()):
-        if last_milestone < m:
-            next_milestone = m
+    next_milestone = None
+    for milestone in sorted(REWARD_MILESTONES.keys()):
+        if current_count >= milestone and last_milestone < milestone:
+            next_milestone = milestone
             break
-            
-    if next_milestone == 0: return
+    
+    # No milestone reached yet
+    if next_milestone is None:
+        return
 
-    if current_count >= next_milestone and last_milestone < next_milestone:
+    # ✅ FIX 8: Give reward
+    try:
+        reward = REWARD_MILESTONES[next_milestone]
+        
+        # ✅ FIX 9: Fetch FRESH player data to avoid overwriting changes
+        fresh_player = db.get_player(user.id)
+        if not fresh_player:
+            logger.error(f"Player {user.id} disappeared during reward processing!")
+            return
+        
+        # Update player stats
+        fresh_player['ryo'] += reward['ryo']
+        fresh_player['exp'] += reward['exp']
+        fresh_player['total_exp'] += reward['exp']
+        
+        # Check for level up
+        final_player, leveled_up, level_up_messages = gl.check_for_level_up(fresh_player)
+        
+        # Save to database
+        db.update_player(user.id, final_player)
+        
+        # ✅ FIX 10: CRITICAL - Update milestone in DB so they don't get it again
+        db.update_chat_milestone(user.id, chat_id, next_milestone)
+        
+        # Build reward message
+        msg = random.choice(MILESTONE_MESSAGES[next_milestone])
+        final_msg = (
+            f"{msg} 🎉\n\n"
+            f"🗣️ {user.mention_html()} hit **{next_milestone} messages** today!\n"
+            f"🎁 **Reward:** +{reward['ryo']} Ryo 💰 | +{reward['exp']} EXP ✨"
+        )
+        
+        # Find next goal
+        next_goal = None
+        for m in sorted(REWARD_MILESTONES.keys()):
+            if m > next_milestone:
+                next_goal = m
+                break
+        
+        if next_goal:
+            final_msg += f"\n\n🎯 *Next Mission:* Reach **{next_goal} messages**!"
+        else:
+            final_msg += f"\n\n👑 You have hit the **MAX** daily chat rewards!"
+
+        # Add level up message if applicable
+        if leveled_up:
+            final_msg += "\n\n" + "\n".join(level_up_messages)
+        
+        # ✅ FIX 11: Send message with error handling
         try:
-            reward = REWARD_MILESTONES[next_milestone]
-            # Fetch fresh player data before awarding to avoid overwrite race conditions
-            p_data = db.get_player(user.id)
-            p_data['ryo'] += reward['ryo']
-            p_data['exp'] += reward['exp']
-            p_data['total_exp'] += reward['exp']
+            await context.bot.send_message(
+                chat_id=chat_id, 
+                text=final_msg, 
+                parse_mode="HTML"
+            )
+            logger.info(f"✅ Chat reward {next_milestone} given to user {user.id} in chat {chat_id}")
+        except Exception as send_error:
+            logger.error(f"Failed to send reward message: {send_error}")
             
-            fp, lvl, msgs = gl.check_for_level_up(p_data)
-            db.update_player(user.id, fp)
-            # IMPORTANT: Update milestone so they don't get it again every message
-            db.update_chat_milestone(user.id, chat_id, next_milestone)
-            
-            msg = random.choice(MILESTONE_MESSAGES[next_milestone])
-            final_msg = (f"{msg} 🎉\n\n🗣️ {user.mention_html()} hit **{next_milestone} messages** today!\n🎁 **Reward:** +{reward['ryo']} Ryo 💰 | +{reward['exp']} EXP ✨")
-            
-            # Find next goal for teaser
-            goal = 0
-            for m in sorted(REWARD_MILESTONES.keys()):
-                if m > next_milestone:
-                    goal = m
-                    break
-            if goal > 0: final_msg += f"\n\n🎯 *Next Mission:* Reach **{goal} messages**!"
-            else: final_msg += f"\n\n👑 You have hit the **MAX** daily chat rewards!"
-
-            if lvl: final_msg += "\n\n" + "\n".join(msgs)
-            
-            await context.bot.send_message(chat_id=chat_id, text=final_msg, parse_mode="HTML")
-            logger.info(f"Chat reward {next_milestone} given to {user.id}")
-            
-        except Exception as e:
-            logger.error(f"Error giving chat reward to {user.id}: {e}")
+    except Exception as e:
+        logger.error(f"❌ Error processing chat reward for user {user.id}: {e}", exc_info=True)
