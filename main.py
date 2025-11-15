@@ -46,7 +46,7 @@ import daily
 import inline_handler
 
 # --- Constants ---
-BOT_TOKEN = "8341511264:AAFjNIOYE5NbABPloFbz-r989l2ySRUs988"
+BOT_TOKEN = "7307409890:AAERVuaVSOOOLGv_anuULfQR_MRPRSvLt_U"
 START_IMAGE_URL = "https://envs.sh/r6z.jpg" 
 
 # --- Welcome Message Function ---
