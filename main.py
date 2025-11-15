@@ -280,8 +280,8 @@ def main():
     # Inline Handler
     app.add_handler(InlineQueryHandler(inline_handler.inline_query_handler))
     
-    # 🆕 ADD THIS LINE - Jutsu Game Callback Handler
-    app.add_handler(CallbackQueryHandler(inline_handler.jutsu_game_callback, pattern="^jutsu_game_"))
+    # 🆕 Jutsu Game Callback Handler (shortened pattern)
+    app.add_handler(CallbackQueryHandler(inline_handler.jutsu_game_callback, pattern="^jg_"))
     
     # Passive Handlers
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_chat_members))
