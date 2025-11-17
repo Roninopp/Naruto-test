@@ -1,7 +1,18 @@
+"""
+🎮 MINIGAMES.PY - Core Criminal Activities
+Handles: Steal, Scout, Kill, Heal, Gift, Protect, Wallet
+
+Features:
+- Heat system integration
+- Reputation tracking
+- Bounty rewards
+- Escape mechanics
+"""
+
 import logging
 import random
 import datetime
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ChatType
 from telegram.error import BadRequest
@@ -9,42 +20,49 @@ from html import escape
 
 import database as db
 import game_logic as gl
+import minigames_v2 as mgv2  # Import advanced systems
 
 logger = logging.getLogger(__name__)
 
-# --- Constants ---
-STEAL_CHAKRA_COST = 15 
+# --- CONSTANTS ---
+STEAL_CHAKRA_COST = 15
 STEAL_BASE_SUCCESS_CHANCE = 0.60
 STEAL_BASE_FAIL_CHANCE = 0.10
-STEAL_BASE_AMOUNT = 30
-STEAL_MAX_ROB_AMOUNT = 100  # ✅ FIXED: Renamed from STEAL_MAX_AMOUNT
+STEAL_MAX_ROB_AMOUNT = 100
 STEAL_FAIL_PENALTY = 20
+
 SCOUT_COOLDOWN_MINUTES = 60
 SCOUT_EXP_CHANCE = 0.05
 SCOUT_RYO_CHANCE = 0.25
 SCOUT_EXP_REWARD = 50
 SCOUT_RYO_REWARD = 25
+
 GIFT_TAX_PERCENT = 0.05
+
 PROTECT_1D_COST = 500
 PROTECT_3D_COST = 1300
+
 KILL_CHAKRA_COST = 30
-KILL_RYO_REWARD = 100
-KILL_EXP_REWARD = 140
 KILL_BASE_SUCCESS = 0.50
 HOSPITAL_DURATION_HOURS = 24
+
 HEAL_COST = 300
 
-async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text, parse_mode=None):
+# Heat constants
+HEAT_PER_ROB = 10
+HEAT_PER_KILL = 25
+
+async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text, parse_mode=None, reply_markup=None):
     try:
-        await update.message.reply_text(text, parse_mode=parse_mode)
+        await update.message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
     except BadRequest:
         try:
-            await context.bot.send_message(update.effective_chat.id, text, parse_mode=parse_mode)
+            await context.bot.send_message(update.effective_chat.id, text, parse_mode=parse_mode, reply_markup=reply_markup)
         except Exception as e:
             logger.error(f"Failed to send safe_reply: {e}")
 
 async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Shows your wallet, or the wallet of the user you reply to."""
+    """Enhanced wallet showing heat, bounty, and reputation."""
     user = update.effective_user
     target_user = user
     
@@ -66,19 +84,40 @@ async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_hosp, _ = gl.get_hospital_status(player)
     status_text = "🏥 Hospitalized" if is_hosp else "❤️ Alive"
     
+    # Get heat status
+    heat_emoji, heat_text = mgv2.get_heat_status(player.get('heat_level', 0))
+    
+    # Get reputation
+    rep_title = player.get('reputation_title')
+    title_text = mgv2.REPUTATION_TITLES[rep_title]['name'] if rep_title in mgv2.REPUTATION_TITLES else "None"
+    
+    # Get bounty
+    bounty = player.get('bounty', 0)
+    
     wallet_text = (
-        f"<b>--- 🥷 {escape(target_user.first_name)}'s Wallet 🥷 ---</b>\n\n"
+        f"<b>--- 🥷 {escape(target_user.first_name)}'s Profile 🥷 ---</b>\n\n"
         f"<b>Rank:</b> {player['rank']}\n"
         f"<b>Level:</b> {player['level']}\n"
-        f"<b>Ryo:</b> {player['ryo']:,} 💰\n"
-        f"<b>Kills:</b> {player.get('kills', 0)} ☠️\n"
-        f"<b>Status:</b> {status_text}" 
+        f"<b>Ryo:</b> {player['ryo']:,} 💰\n\n"
+        f"<b>⚔️ Combat Stats:</b>\n"
+        f"├ Kills: {player.get('kills', 0)} ☠️\n"
+        f"├ Wins: {player['wins']}\n"
+        f"└ Losses: {player['losses']}\n\n"
+        f"<b>🎯 Criminal Record:</b>\n"
+        f"├ Bounty: {bounty:,} Ryo 💰\n"
+        f"├ Heat: {heat_emoji} {player.get('heat_level', 0)}/100 ({heat_text})\n"
+        f"└ Successful Robs: {player.get('total_steals', 0)}\n\n"
+        f"<b>🏆 Reputation:</b>\n"
+        f"├ Title: {title_text}\n"
+        f"├ Points: {player.get('reputation_points', 0)}\n"
+        f"└ Contracts Done: {player.get('contracts_completed', 0)}\n\n"
+        f"<b>Status:</b> {status_text}"
     )
     
     await safe_reply(update, context, wallet_text, parse_mode="HTML")
 
 async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Attempts to steal a specific amount of Ryo from a replied-to user."""
+    """Rob with heat system and escape mechanics."""
     user = update.effective_user
     chat = update.effective_chat
     
@@ -142,44 +181,102 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if stealer['current_chakra'] < STEAL_CHAKRA_COST:
         await safe_reply(update, context, f"🥵 You are too tired! You need **{STEAL_CHAKRA_COST} Chakra**.", parse_mode="HTML")
         return
-         
-    stealer_updates = {'current_chakra': stealer['current_chakra'] - STEAL_CHAKRA_COST}
+    
+    # Get reputation bonuses
+    rep_bonuses = mgv2.get_reputation_bonuses(stealer)
+    rob_success_bonus = rep_bonuses.get('rob_success', 0)
+    rob_amount_bonus = rep_bonuses.get('rob_amount', 1.0)
+    
+    # Heat affects success
+    heat_level = stealer.get('heat_level', 0)
+    heat_penalty = heat_level * 0.003
+    
     stealer_stats = gl.get_total_stats(stealer)
     
-    fail_chance = max(0.05, STEAL_BASE_FAIL_CHANCE - min(0.10, stealer_stats['speed'] * 0.005))
-    success_chance = STEAL_BASE_SUCCESS_CHANCE + min(0.20, stealer_stats['speed'] * 0.01)
+    fail_chance = max(0.05, STEAL_BASE_FAIL_CHANCE + heat_penalty - min(0.10, stealer_stats['speed'] * 0.005))
+    success_chance = STEAL_BASE_SUCCESS_CHANCE + rob_success_bonus + min(0.20, stealer_stats['speed'] * 0.01) - heat_penalty
     
     roll = random.random()
     
+    stealer_updates = {'current_chakra': stealer['current_chakra'] - STEAL_CHAKRA_COST}
+    
     if roll < success_chance:
-        # ✅ SUCCESS: Use atomic operations to prevent race conditions
+        # SUCCESS
+        final_amount = int(amount_to_steal * rob_amount_bonus)
+        
+        # Heat multiplier
+        heat_multiplier = mgv2.get_heat_multiplier(heat_level)
+        final_amount = int(final_amount * heat_multiplier)
+        
+        # Update heat
+        heat_updates = mgv2.update_heat(stealer, HEAT_PER_ROB)
+        stealer_updates.update(heat_updates)
+        stealer_updates['total_steals'] = stealer.get('total_steals', 0) + 1
+        stealer_updates['reputation_points'] = stealer.get('reputation_points', 0) + 10
+        
         db.update_player(user.id, stealer_updates)
+        db.atomic_add_ryo(user.id, final_amount)
+        db.atomic_add_ryo(victim_user.id, -final_amount)
         
-        # Atomic Ryo transfer
-        db.atomic_add_ryo(user.id, amount_to_steal)
-        db.atomic_add_ryo(victim_user.id, -amount_to_steal)
+        # Check for title
+        new_title, title_info = mgv2.check_reputation_title({**stealer, **stealer_updates})
+        title_text = f"\n\n🏆 <b>NEW TITLE!</b> {title_info['name']}" if new_title else ""
+        if new_title:
+            db.update_player(user.id, {'reputation_title': new_title})
         
-        victim_name = escape(victim_user.first_name)
-        success_messages = [
-            f"✅ **Success!** You used a classic substitution jutsu and swiped **{amount_to_steal} Ryo** from **{victim_name}**!",
-            f"✅ **Perfect Stealth!** You slipped past **{victim_name}**'s defenses and took **{amount_to_steal} Ryo**!",
-            f"✅ **Gotcha!** You pickpocketed **{victim_name}** while they weren't looking. You got **{amount_to_steal} Ryo**!",
-            f"✅ **Too Easy!** You stole **{amount_to_steal} Ryo** from **{victim_name}**. They'll never see it coming!"
-        ]
-        await safe_reply(update, context, random.choice(success_messages), parse_mode="HTML")
+        # Roll for loot
+        loot_type, loot_key, loot_data = mgv2.roll_for_loot(stealer)
+        loot_text = ""
+        if loot_type == 'legendary':
+            loot_text = f"\n✨ <b>LEGENDARY DROP!</b> {loot_data['name']}"
+            items = stealer.get('legendary_items', [])
+            items.append(loot_key)
+            db.update_player(user.id, {'legendary_items': items})
+        elif loot_type == 'rare':
+            loot_text = f"\n🎁 Bonus: +{loot_data['amount']} Ryo"
+            db.atomic_add_ryo(user.id, loot_data['amount'])
+        
+        heat_emoji, _ = mgv2.get_heat_status(heat_updates['heat_level'])
+        
+        success_msg = (
+            f"✅ <b>ROB SUCCESS!</b> ✅\n\n"
+            f"💰 Stolen: <b>{final_amount} Ryo</b>\n"
+            f"🔥 Heat Bonus: x{heat_multiplier}\n"
+            f"🚨 Heat: {heat_emoji} {heat_updates['heat_level']}/100\n"
+            f"⭐ +10 Rep{title_text}{loot_text}"
+        )
+        await safe_reply(update, context, success_msg, parse_mode="HTML")
         
     elif roll < (success_chance + fail_chance):
-        # CAUGHT: Pay penalty
-        lose = min(stealer['ryo'], STEAL_FAIL_PENALTY)
-        stealer_updates['ryo'] = stealer['ryo'] - lose
+        # CAUGHT - Escape options
+        keyboard = [
+            [InlineKeyboardButton("🏃 Run (Speed)", callback_data=f"escape_run_{user.id}")],
+            [InlineKeyboardButton("⚔️ Fight (Risk)", callback_data=f"escape_fight_{user.id}")],
+            [InlineKeyboardButton(f"💰 Bribe ({STEAL_FAIL_PENALTY * 2} Ryo)", callback_data=f"escape_bribe_{user.id}")]
+        ]
+        
+        stealer_updates['total_steals_caught'] = stealer.get('total_steals_caught', 0) + 1
+        heat_updates = mgv2.update_heat(stealer, HEAT_PER_ROB // 2)
+        stealer_updates.update(heat_updates)
         db.update_player(user.id, stealer_updates)
-        await safe_reply(update, context, f"❌ **Caught!** You paid a **{lose} Ryo** fine.", parse_mode="HTML")
+        
+        caught_msg = (
+            f"🚨 <b>CAUGHT!</b> 🚨\n\n"
+            f"Spotted by {escape(victim_user.first_name)}!\n\n"
+            f"Choose wisely:\n"
+            f"🏃 <b>Run</b> - 50%+ escape chance\n"
+            f"⚔️ <b>Fight</b> - Win = 2x reward, Lose = 2x fine\n"
+            f"💰 <b>Bribe</b> - Guaranteed escape"
+        )
+        
+        await safe_reply(update, context, caught_msg, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
     else:
-        # NEUTRAL: Just lose chakra
+        # NEUTRAL
         db.update_player(user.id, stealer_updates)
-        await safe_reply(update, context, "You failed to find anything.")
+        await safe_reply(update, context, "Failed to find anything.")
 
 async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Scout with reputation bonuses."""
     user = update.effective_user
     player = db.get_player(user.id)
     
@@ -201,25 +298,43 @@ async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_reply(update, context, f"Scout again in {(cd - now).total_seconds()/60:.0f}m.")
             return
     
+    # Reputation bonus
+    rep_bonuses = mgv2.get_reputation_bonuses(player)
+    scout_multiplier = rep_bonuses.get('scout_rewards', 1.0)
+    
     player_updates = {'scout_cooldown': now + datetime.timedelta(minutes=SCOUT_COOLDOWN_MINUTES)}
+    player_updates['total_scouts'] = player.get('total_scouts', 0) + 1
+    player_updates['reputation_points'] = player.get('reputation_points', 0) + 5
+    
     roll = random.random()
     
     if roll < SCOUT_EXP_CHANCE:
+        exp_reward = int(SCOUT_EXP_REWARD * scout_multiplier)
         player_updates.update({
-            'exp': player['exp'] + SCOUT_EXP_REWARD, 
-            'total_exp': player['total_exp'] + SCOUT_EXP_REWARD
+            'exp': player['exp'] + exp_reward,
+            'total_exp': player['total_exp'] + exp_reward
         })
         db.update_player(user.id, player_updates)
-        await safe_reply(update, context, f"You found a hidden training ground! **+{SCOUT_EXP_REWARD} EXP**!", parse_mode="HTML")
+        
+        # Check title
+        new_title, title_info = mgv2.check_reputation_title({**player, **player_updates})
+        title_text = f"\n🏆 <b>NEW TITLE!</b> {title_info['name']}" if new_title else ""
+        if new_title:
+            db.update_player(user.id, {'reputation_title': new_title})
+        
+        await safe_reply(update, context, f"Found a hidden training ground! **+{exp_reward} EXP**! ⭐ +5 Rep{title_text}", parse_mode="HTML")
+        
     elif roll < (SCOUT_EXP_CHANCE + SCOUT_RYO_CHANCE):
-        player_updates['ryo'] = player['ryo'] + SCOUT_RYO_REWARD
+        ryo_reward = int(SCOUT_RYO_REWARD * scout_multiplier)
+        player_updates['ryo'] = player['ryo'] + ryo_reward
         db.update_player(user.id, player_updates)
-        await safe_reply(update, context, f"You found a lost wallet! **+{SCOUT_RYO_REWARD} Ryo**.", parse_mode="HTML")
+        await safe_reply(update, context, f"Found a lost wallet! **+{ryo_reward} Ryo**. ⭐ +5 Rep", parse_mode="HTML")
     else:
         db.update_player(user.id, player_updates)
-        await safe_reply(update, context, "You scouted but found nothing.")
+        await safe_reply(update, context, "You scouted but found nothing. ⭐ +5 Rep")
 
 async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Kill with bounty rewards and loot drops."""
     user = update.effective_user
     chat = update.effective_chat
     
@@ -246,18 +361,12 @@ async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     is_hospitalized, remaining = gl.get_hospital_status(attacker)
     if is_hospitalized:
-        await safe_reply(update, context, f"🏥 You are too injured to fight! Wait {remaining/3600:.1f}h.", parse_mode="HTML")
+        await safe_reply(update, context, f"🏥 You are too injured! Wait {remaining/3600:.1f}h.", parse_mode="HTML")
         return
 
     victim_is_hosp, _ = gl.get_hospital_status(victim)
     if victim_is_hosp:
-        killer_id = victim.get('hospitalized_by')
-        killer_name = "someone"
-        if killer_id:
-            killer = db.get_player(killer_id)
-            if killer:
-                killer_name = killer['username']
-        await safe_reply(update, context, f"⚠️ <b>{escape(victim_user.first_name)}</b> was already killed by <b>{escape(killer_name)}</b>!", parse_mode="HTML")
+        await safe_reply(update, context, f"⚠️ <b>{escape(victim_user.first_name)}</b> is already hospitalized!", parse_mode="HTML")
         return
 
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -266,43 +375,85 @@ async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if pt.tzinfo is None:
             pt = pt.replace(tzinfo=datetime.timezone.utc)
         if now < pt:
-            await safe_reply(update, context, f"🛡️ **ATTEMPT FAILED!**\n<b>{escape(victim_user.first_name)}</b> is protected by Anbu Black Ops!", parse_mode="HTML")
+            await safe_reply(update, context, f"🛡️ <b>{escape(victim_user.first_name)}</b> is protected!", parse_mode="HTML")
             return
 
     if attacker['current_chakra'] < KILL_CHAKRA_COST:
-        await safe_reply(update, context, f"🥵 Need {KILL_CHAKRA_COST} Chakra! Use /train.", parse_mode="HTML")
+        await safe_reply(update, context, f"🥵 Need {KILL_CHAKRA_COST} Chakra!", parse_mode="HTML")
         return
+    
+    # Reputation bonus
+    rep_bonuses = mgv2.get_reputation_bonuses(attacker)
+    kill_bonus = rep_bonuses.get('kill_success', 0)
+    
+    success_chance = KILL_BASE_SUCCESS + kill_bonus
     
     attacker_updates = {'current_chakra': attacker['current_chakra'] - KILL_CHAKRA_COST}
     
-    if random.random() < KILL_BASE_SUCCESS:
+    if random.random() < success_chance:
+        # Calculate bounty
+        bounty = mgv2.calculate_bounty(victim)
+        
+        # Heat multiplier
+        heat_level = attacker.get('heat_level', 0)
+        heat_multiplier = mgv2.get_heat_multiplier(heat_level)
+        final_bounty = int(bounty * heat_multiplier)
+        
         hospital_until = now + datetime.timedelta(hours=HOSPITAL_DURATION_HOURS)
+        
+        # Update heat
+        heat_updates = mgv2.update_heat(attacker, HEAT_PER_KILL)
+        
         attacker_updates.update({
-            'ryo': attacker['ryo'] + KILL_RYO_REWARD, 
-            'exp': attacker['exp'] + KILL_EXP_REWARD, 
-            'total_exp': attacker['total_exp'] + KILL_EXP_REWARD, 
-            'kills': attacker.get('kills', 0) + 1
+            'ryo': attacker['ryo'] + final_bounty,
+            'exp': attacker['exp'] + 140,
+            'total_exp': attacker['total_exp'] + 140,
+            'kills': attacker.get('kills', 0) + 1,
+            'reputation_points': attacker.get('reputation_points', 0) + 50
         })
+        attacker_updates.update(heat_updates)
+        
         db.update_player(user.id, attacker_updates)
         db.update_player(victim_user.id, {
-            'hospitalized_until': hospital_until.isoformat(), 
-            'hospitalized_by': user.id
+            'hospitalized_until': hospital_until.isoformat(),
+            'hospitalized_by': user.id,
+            'bounty': 0  # Clear victim's bounty
         })
         
+        # Roll for loot
+        loot_type, loot_key, loot_data = mgv2.roll_for_loot(attacker)
+        loot_text = ""
+        if loot_type == 'legendary':
+            loot_text = f"\n✨ <b>LEGENDARY DROP!</b> {loot_data['name']}"
+            items = attacker.get('legendary_items', [])
+            items.append(loot_key)
+            db.update_player(user.id, {'legendary_items': items})
+        
+        # Check title
+        new_title, title_info = mgv2.check_reputation_title({**attacker, **attacker_updates})
+        title_text = f"\n🏆 <b>NEW TITLE!</b> {title_info['name']}" if new_title else ""
+        if new_title:
+            db.update_player(user.id, {'reputation_title': new_title})
+        
+        heat_emoji, _ = mgv2.get_heat_status(heat_updates['heat_level'])
+        
         msg = (
-            f"☠️ **SHINOBI EXECUTED** 🩸\n\n"
-            f"💤 **Killer:** {escape(user.first_name)}\n"
-            f"💀 **Victim:** {escape(victim_user.first_name)}\n\n"
-            f"💸 **Bounty:** {KILL_RYO_REWARD} Ryo\n"
-            f"✨ **Exp Gained:** +{KILL_EXP_REWARD}\n"
-            f"🏥 **Status:** Victim hospitalized for 24h!"
+            f"☠️ <b>EXECUTION!</b> 🩸\n\n"
+            f"💀 <b>Killer:</b> {escape(user.first_name)}\n"
+            f"💔 <b>Victim:</b> {escape(victim_user.first_name)}\n\n"
+            f"💰 <b>Bounty:</b> {final_bounty:,} Ryo\n"
+            f"✨ <b>EXP:</b> +140\n"
+            f"⭐ <b>Rep:</b> +50\n"
+            f"🚨 <b>Heat:</b> {heat_emoji} {heat_updates['heat_level']}/100\n"
+            f"🏥 <b>Victim hospitalized 24h!{title_text}{loot_text}</b>"
         )
         await safe_reply(update, context, msg, parse_mode="HTML")
     else:
         db.update_player(user.id, attacker_updates)
-        await safe_reply(update, context, f"💨 **MISSED!**\n<b>{escape(victim_user.first_name)}</b> spotted you and escaped! You wasted your Chakra.", parse_mode="HTML")
+        await safe_reply(update, context, f"💨 <b>MISSED!</b>\n{escape(victim_user.first_name)} escaped!", parse_mode="HTML")
 
 async def gift_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gift with reputation tracking."""
     user = update.effective_user
     
     if not update.message.reply_to_message:
@@ -342,13 +493,19 @@ async def gift_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     final = amount - int(amount * GIFT_TAX_PERCENT)
     
-    # ✅ Use atomic operations
     db.atomic_add_ryo(user.id, -amount)
     db.atomic_add_ryo(victim.id, final)
     
-    await safe_reply(update, context, f"🎁 **GIFT SENT!**\n<b>{escape(user.first_name)}</b> gifted **{amount:,} Ryo** to <b>{escape(victim.first_name)}</b>!\n<i>(Tax deducted: {amount - final} Ryo)</i>", parse_mode="HTML")
+    # Track reputation
+    db.update_player(user.id, {
+        'total_gifts_given': sender.get('total_gifts_given', 0) + 1,
+        'reputation_points': sender.get('reputation_points', 0) + 5
+    })
+    
+    await safe_reply(update, context, f"🎁 **GIFT SENT!**\n<b>{escape(user.first_name)}</b> gifted **{amount:,} Ryo** to <b>{escape(victim.first_name)}</b>!\n<i>(Tax: {amount - final} Ryo)</i>\n⭐ +5 Rep", parse_mode="HTML")
 
 async def protect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Protection with reputation bonuses."""
     user = update.effective_user
     player = db.get_player(user.id)
     
@@ -363,22 +520,30 @@ async def protect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_reply(update, context, f"Need **{cost} Ryo** for {days}d protection.", parse_mode="HTML")
         return
     
+    # Reputation bonus
+    rep_bonuses = mgv2.get_reputation_bonuses(player)
+    protection_bonus = rep_bonuses.get('protection_time', 1.0)
+    actual_days = int(days * protection_bonus)
+    
     now = datetime.datetime.now(datetime.timezone.utc)
     current = player.get('protection_until')
     
     if current and current.tzinfo is None:
         current = current.replace(tzinfo=datetime.timezone.utc)
     
-    new_time = (current + datetime.timedelta(days=days)) if (current and current > now) else (now + datetime.timedelta(days=days))
+    new_time = (current + datetime.timedelta(days=actual_days)) if (current and current > now) else (now + datetime.timedelta(days=actual_days))
     
     db.update_player(user.id, {
-        'ryo': player['ryo'] - cost, 
-        'protection_until': new_time.isoformat()
+        'ryo': player['ryo'] - cost,
+        'protection_until': new_time.isoformat(),
+        'total_protections_bought': player.get('total_protections_bought', 0) + 1
     })
     
-    await safe_reply(update, context, f"🛡️ **ANBU GUARD HIRED!** Protected for **{days} day(s)**!", parse_mode="HTML")
+    bonus_text = f" (+{actual_days - days} bonus days!)" if actual_days > days else ""
+    await safe_reply(update, context, f"🛡️ <b>ANBU GUARD HIRED!</b>\nProtected for **{actual_days} day(s)**!{bonus_text}", parse_mode="HTML")
 
 async def heal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Heal with reputation tracking."""
     user = update.effective_user
     payer = db.get_player(user.id)
     
@@ -412,8 +577,23 @@ async def heal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     db.update_player(user.id, {'ryo': payer['ryo'] - HEAL_COST})
     db.update_player(target_id, {
-        'hospitalized_until': None, 
+        'hospitalized_until': None,
         'hospitalized_by': None
     })
     
-    await safe_reply(update, context, f"💚 **MEDICAL NINJUTSU!** 💚\n{target_name} fully healed and released from the hospital!", parse_mode="HTML")
+    # Track reputation if healing others
+    if target_id != user.id:
+        db.update_player(user.id, {
+            'total_heals_given': payer.get('total_heals_given', 0) + 1,
+            'reputation_points': payer.get('reputation_points', 0) + 25
+        })
+        
+        # Check for Guardian Angel title
+        new_title, title_info = mgv2.check_reputation_title({**payer, 'total_heals_given': payer.get('total_heals_given', 0) + 1})
+        title_text = f"\n🏆 <b>NEW TITLE!</b> {title_info['name']}" if new_title else ""
+        if new_title:
+            db.update_player(user.id, {'reputation_title': new_title})
+        
+        await safe_reply(update, context, f"💚 <b>MEDICAL NINJUTSU!</b> 💚\n{target_name} fully healed!\n⭐ +25 Rep{title_text}", parse_mode="HTML")
+    else:
+        await safe_reply(update, context, f"💚 <b>MEDICAL NINJUTSU!</b> 💚\n{target_name} fully healed!", parse_mode="HTML")
