@@ -40,6 +40,7 @@ import inventory
 import animations 
 import akatsuki_event 
 import minigames 
+import minigames_v2  # 🆕 NEW MODULE
 import leaderboard 
 import chat_rewards
 import daily 
@@ -218,7 +219,7 @@ def main():
     app.add_handler(CommandHandler("help", help_handler.show_main_help_menu))
     app.add_handler(CommandHandler("inventory", inventory.inventory_command))
 
-    # Minigames
+    # Minigames (Core)
     app.add_handler(CommandHandler(("wallet", "bal", "balance"), minigames.wallet_command))
     app.add_handler(CommandHandler(("steal", "rob"), minigames.steal_command))
     app.add_handler(CommandHandler("scout", minigames.scout_command))
@@ -226,6 +227,14 @@ def main():
     app.add_handler(CommandHandler("gift", minigames.gift_command))
     app.add_handler(CommandHandler("protect", minigames.protect_command))
     app.add_handler(CommandHandler("heal", minigames.heal_command))
+
+    # 🆕 Minigames V2 (Advanced Systems)
+    app.add_handler(CommandHandler("bountyboard", minigames_v2.bounty_board_command))
+    app.add_handler(CommandHandler("contracts", minigames_v2.contracts_command))
+    app.add_handler(CommandHandler("contract", minigames_v2.place_contract_command))
+    app.add_handler(CommandHandler("legendary", minigames_v2.inventory_command))
+    app.add_handler(CommandHandler("reputation", minigames_v2.reputation_command))
+    app.add_handler(CommandHandler("heat", minigames_v2.heat_status_command))
 
     # Daily & Leaderboard
     app.add_handler(CommandHandler("daily", daily.daily_command))
@@ -279,13 +288,15 @@ def main():
     
     # Inline Handler
     app.add_handler(InlineQueryHandler(inline_handler.inline_query_handler))
-    
-    # 🆕 Jutsu Game Callback Handler (shortened pattern)
     app.add_handler(CallbackQueryHandler(inline_handler.jutsu_game_callback, pattern="^jg_"))
+    
+    # 🆕 Escape Mechanics & Item Usage Callbacks
+    app.add_handler(CallbackQueryHandler(minigames.escape_callback, pattern="^escape_"))
+    app.add_handler(CallbackQueryHandler(minigames_v2.use_item_callback, pattern="^use_legendary_item$"))
+    app.add_handler(CallbackQueryHandler(minigames_v2.use_item_callback, pattern="^use_item_"))
     
     # Passive Handlers
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_chat_members))
-    
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & (~filters.COMMAND) & (~filters.StatusUpdate.NEW_CHAT_MEMBERS), akatsuki_event.passive_group_register), group=-1)
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND) & filters.ChatType.GROUPS, chat_rewards.on_chat_message), group=10)
 
