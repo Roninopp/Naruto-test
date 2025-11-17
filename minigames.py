@@ -597,3 +597,99 @@ async def heal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_reply(update, context, f"💚 <b>MEDICAL NINJUTSU!</b> 💚\n{target_name} fully healed!\n⭐ +25 Rep{title_text}", parse_mode="HTML")
     else:
         await safe_reply(update, context, f"💚 <b>MEDICAL NINJUTSU!</b> 💚\n{target_name} fully healed!", parse_mode="HTML")
+
+# 🆕 ESCAPE CALLBACK HANDLER
+async def escape_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles escape mini-game when caught robbing."""
+    query = update.callback_query
+    
+    try:
+        await query.answer()
+    except:
+        pass
+    
+    data = query.data.split('_')
+    action = data[1]  # run, fight, bribe
+    user_id = int(data[2])
+    
+    if query.from_user.id != user_id:
+        try:
+            await query.answer("This is not your escape!", show_alert=True)
+        except:
+            pass
+        return
+    
+    player = db.get_player(user_id)
+    if not player:
+        return
+    
+    stats = gl.get_total_stats(player)
+    
+    if action == 'run':
+        # Speed check
+        escape_chance = 0.5 + (stats['speed'] * 0.01)
+        if random.random() < escape_chance:
+            result = (
+                f"🏃💨 <b>ESCAPED!</b>\n\n"
+                f"You used your speed to get away!\n"
+                f"⭐ +5 Reputation"
+            )
+            db.update_player(user_id, {
+                'reputation_points': player.get('reputation_points', 0) + 5,
+                'total_escapes': player.get('total_escapes', 0) + 1
+            })
+        else:
+            lose = min(player['ryo'], STEAL_FAIL_PENALTY)
+            result = (
+                f"❌ <b>CAPTURED!</b>\n\n"
+                f"You couldn't escape!\n"
+                f"💸 Fine: {lose} Ryo"
+            )
+            db.atomic_add_ryo(user_id, -lose)
+    
+    elif action == 'fight':
+        # Strength check
+        win_chance = 0.3 + (stats['strength'] * 0.01)
+        if random.random() < win_chance:
+            reward = STEAL_FAIL_PENALTY * 2
+            result = (
+                f"⚔️ <b>VICTORY!</b>\n\n"
+                f"You defeated the guard!\n"
+                f"💰 Looted: {reward} Ryo\n"
+                f"⭐ +15 Reputation"
+            )
+            db.atomic_add_ryo(user_id, reward)
+            db.update_player(user_id, {'reputation_points': player.get('reputation_points', 0) + 15})
+        else:
+            lose = min(player['ryo'], STEAL_FAIL_PENALTY * 2)
+            result = (
+                f"💔 <b>DEFEATED!</b>\n\n"
+                f"The guard overpowered you!\n"
+                f"💸 Fine: {lose} Ryo"
+            )
+            db.atomic_add_ryo(user_id, -lose)
+    
+    elif action == 'bribe':
+        cost = STEAL_FAIL_PENALTY * 2
+        if player['ryo'] >= cost:
+            result = (
+                f"💰 <b>BRIBE ACCEPTED!</b>\n\n"
+                f"You paid off the guard.\n"
+                f"💸 Cost: {cost} Ryo"
+            )
+            db.atomic_add_ryo(user_id, -cost)
+        else:
+            lose = min(player['ryo'], STEAL_FAIL_PENALTY)
+            result = (
+                f"❌ <b>NOT ENOUGH RYO!</b>\n\n"
+                f"Guard took what you had.\n"
+                f"💸 Lost: {lose} Ryo"
+            )
+            db.atomic_add_ryo(user_id, -lose)
+    else:
+        result = "Invalid escape option!"
+    
+    try:
+        await query.edit_message_text(result, parse_mode="HTML")
+    except:
+        pass
