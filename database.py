@@ -72,7 +72,18 @@ def create_tables():
         """CREATE TABLE IF NOT EXISTS world_boss_damage (id SERIAL PRIMARY KEY, chat_id BIGINT NOT NULL, user_id BIGINT NOT NULL, username TEXT NOT NULL, total_damage INTEGER DEFAULT 0, UNIQUE(chat_id, user_id));""",
         """CREATE TABLE IF NOT EXISTS group_event_settings (chat_id BIGINT PRIMARY KEY, events_enabled INTEGER DEFAULT 1);""",
         """CREATE TABLE IF NOT EXISTS active_akatsuki_fights (message_id BIGINT PRIMARY KEY, chat_id BIGINT NOT NULL, enemy_name TEXT NOT NULL, enemy_hp INTEGER NOT NULL, player_1_id BIGINT DEFAULT NULL, player_2_id BIGINT DEFAULT NULL, player_3_id BIGINT DEFAULT NULL, turn_player_id TEXT DEFAULT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);""",
-        """CREATE TABLE IF NOT EXISTS chat_activity (user_id BIGINT NOT NULL, chat_id BIGINT NOT NULL, message_count INTEGER DEFAULT 0, last_reward_milestone INTEGER DEFAULT 0, last_active_date DATE DEFAULT CURRENT_DATE, PRIMARY KEY (user_id, chat_id));"""
+        """CREATE TABLE IF NOT EXISTS chat_activity (user_id BIGINT NOT NULL, chat_id BIGINT NOT NULL, message_count INTEGER DEFAULT 0, last_reward_milestone INTEGER DEFAULT 0, last_active_date DATE DEFAULT CURRENT_DATE, PRIMARY KEY (user_id, chat_id));""",
+        # 🆕 NEW: Contracts table for minigames_v2
+        """CREATE TABLE IF NOT EXISTS player_contracts (
+            id SERIAL PRIMARY KEY,
+            target_user_id BIGINT NOT NULL,
+            placed_by_user_id BIGINT NOT NULL,
+            placed_by_username TEXT NOT NULL,
+            reward BIGINT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            is_active INTEGER DEFAULT 1
+        );"""
     )
     try:
         with conn.cursor() as c: 
@@ -86,36 +97,71 @@ def create_tables():
     finally:
         put_db_connection(conn)
 
-# --- 2. SCHEMA UPDATER ---
+# --- 2. SCHEMA UPDATER (NOW WITH MINIGAMES V2 FIELDS) ---
 def update_schema():
     conn = get_db_connection()
     if conn is None: return
+    
+    # Original columns + NEW minigames_v2 columns
     cols = {
         'players': [
-            ('equipment', "JSONB DEFAULT '{}'::jsonb"), ('inventory', "JSONB DEFAULT '[]'::jsonb"),
-            ('daily_train_count', 'INTEGER DEFAULT 0'), ('last_train_reset_date', 'DATE DEFAULT NULL'),
-            ('boss_attack_cooldown', 'TIMESTAMP DEFAULT NULL'), ('story_progress', 'INTEGER DEFAULT 0'),
-            ('akatsuki_cooldown', 'JSONB DEFAULT NULL'), ('steal_cooldown', 'TIMESTAMP DEFAULT NULL'),
-            ('scout_cooldown', 'TIMESTAMP DEFAULT NULL'), ('assassinate_cooldown', 'TIMESTAMP DEFAULT NULL'),
-            ('daily_mission_count', 'INTEGER DEFAULT 0'), ('last_mission_reset_date', 'DATE DEFAULT NULL'),
-            ('last_daily_claim', 'DATE DEFAULT NULL'), ('protection_until', 'TIMESTAMP DEFAULT NULL'),
-            ('hospitalized_until', 'TIMESTAMP DEFAULT NULL'), ('hospitalized_by', 'BIGINT DEFAULT NULL'), ('kills', 'INTEGER DEFAULT 0'),
+            # Original columns
+            ('equipment', "JSONB DEFAULT '{}'::jsonb"), 
+            ('inventory', "JSONB DEFAULT '[]'::jsonb"),
+            ('daily_train_count', 'INTEGER DEFAULT 0'), 
+            ('last_train_reset_date', 'DATE DEFAULT NULL'),
+            ('boss_attack_cooldown', 'TIMESTAMP DEFAULT NULL'), 
+            ('story_progress', 'INTEGER DEFAULT 0'),
+            ('akatsuki_cooldown', 'JSONB DEFAULT NULL'), 
+            ('steal_cooldown', 'TIMESTAMP DEFAULT NULL'),
+            ('scout_cooldown', 'TIMESTAMP DEFAULT NULL'), 
+            ('assassinate_cooldown', 'TIMESTAMP DEFAULT NULL'),
+            ('daily_mission_count', 'INTEGER DEFAULT 0'), 
+            ('last_mission_reset_date', 'DATE DEFAULT NULL'),
+            ('last_daily_claim', 'DATE DEFAULT NULL'), 
+            ('protection_until', 'TIMESTAMP DEFAULT NULL'),
+            ('hospitalized_until', 'TIMESTAMP DEFAULT NULL'), 
+            ('hospitalized_by', 'BIGINT DEFAULT NULL'), 
+            ('kills', 'INTEGER DEFAULT 0'),
             ('last_inline_game_date', 'DATE DEFAULT NULL'),
-            ('inline_pack_cooldown', 'TIMESTAMP DEFAULT NULL')
+            ('inline_pack_cooldown', 'TIMESTAMP DEFAULT NULL'),
+            
+            # 🆕 NEW: Minigames V2 columns
+            ('bounty', 'INTEGER DEFAULT 0'),
+            ('total_bounty_earned', 'INTEGER DEFAULT 0'),
+            ('heat_level', 'INTEGER DEFAULT 0'),
+            ('last_heat_decay', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+            ('reputation_points', 'INTEGER DEFAULT 0'),
+            ('reputation_title', 'TEXT DEFAULT NULL'),
+            ('total_steals', 'INTEGER DEFAULT 0'),
+            ('total_steals_caught', 'INTEGER DEFAULT 0'),
+            ('total_scouts', 'INTEGER DEFAULT 0'),
+            ('total_heals_given', 'INTEGER DEFAULT 0'),
+            ('total_gifts_given', 'INTEGER DEFAULT 0'),
+            ('total_protections_bought', 'INTEGER DEFAULT 0'),
+            ('contracts_completed', 'INTEGER DEFAULT 0'),
+            ('legendary_items', "JSONB DEFAULT '[]'::jsonb"),
+            ('total_escapes', 'INTEGER DEFAULT 0'),
+            ('escape_cooldown', 'TIMESTAMP DEFAULT NULL'),
         ]
     }
+    
     try:
         with conn.cursor() as c:
             for t, clist in cols.items():
                 for col, dtype in clist:
                     try:
                         c.execute(f"ALTER TABLE {t} ADD COLUMN IF NOT EXISTS {col} {dtype};")
+                        logger.info(f"✅ Added/checked column: {col}")
                     except psycopg2.errors.DuplicateColumn:
                         conn.rollback()
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(f"Column {col} issue: {e}")
                         conn.rollback()
         conn.commit()
-    except Exception:
+        logger.info("🔥 Minigames V2 schema migration complete!")
+    except Exception as e:
+        logger.error(f"Schema update error: {e}")
         conn.rollback()
     finally:
         put_db_connection(conn)
@@ -124,7 +170,7 @@ def update_schema():
 def get_player(user_id):
     cp = cache.get_player_cache(user_id)
     if cp:
-        for k in ['battle_cooldown','boss_attack_cooldown','steal_cooldown','scout_cooldown','assassinate_cooldown','protection_until','hospitalized_until','created_at', 'inline_pack_cooldown']:
+        for k in ['battle_cooldown','boss_attack_cooldown','steal_cooldown','scout_cooldown','assassinate_cooldown','protection_until','hospitalized_until','created_at', 'inline_pack_cooldown', 'last_heat_decay', 'escape_cooldown']:
             if cp.get(k): 
                 try:
                     cp[k] = datetime.datetime.fromisoformat(cp[k])
