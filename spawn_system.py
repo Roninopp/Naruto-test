@@ -14,7 +14,7 @@ SPAWN_CHANCE = 0.3  # 30% chance per check
 MIN_COOLDOWN = 1800 # 30 minutes between spawns per group
 UPDATE_CHANNEL = "@SN_Telegram_bots_Stores" # Channel for Force Join
 UPDATE_CHANNEL_LINK = "https://t.me/SN_Telegram_bots_Stores"
-ADMIN_ID = 6837532865 # 🔥 YOUR ID FOR /pp COMMAND
+ADMIN_ID = 6837532865 # 🔥 OWNER ID (ONLY YOU)
 
 # Memory Storage
 ACTIVE_SPAWNS = {}  # {chat_id: {'char': data, 'msg_id': int}}
@@ -84,9 +84,19 @@ async def trigger_spawn_on_message(update: Update, context: ContextTypes.DEFAULT
     GROUP_COOLDOWNS[chat_id] = current_time
 
 async def forcespawn_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """⚡ Admin command to force a spawn immediately (Testing)"""
+    """⚡ Admin command to force a spawn immediately"""
+    user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     
+    # 🔒 SECURITY CHECK
+    if user_id != ADMIN_ID:
+        await update.message.reply_text(
+            f"🚫 **You are not authorized!**\nPlease contact [Support]({UPDATE_CHANNEL_LINK}).",
+            parse_mode="Markdown",
+            disable_web_page_preview=True
+        )
+        return
+
     await update.message.reply_text("⚡ **Summoning Jutsu! Force Spawning...**", parse_mode="Markdown")
     
     # Reset cooldown so it spawns instantly
@@ -105,7 +115,7 @@ async def spawn_character(chat_id, context):
     caption = (
         f"⚠️ **A Wild Ninja Appeared!**\n\n"
         f"👤 **Name:** ???\n"
-        f"🌟 **Rarity:** {rarity}\n\n"  # <--- CHANGED THIS LINE
+        f"🌟 **Rarity:** {rarity}\n\n"
         f"⚔️ /recruit [Character Name]"
     )
     
@@ -231,7 +241,6 @@ async def recruit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
          return
 
     # 5. CORRECT NAME! START BATTLE!
-    # Pick a random Jutsu for animation
     moves = ["Rasengan", "Chidori", "Shadow Clone", "Fireball Jutsu", "Taijutsu Kick"]
     user_move = random.choice(moves)
     
@@ -283,9 +292,14 @@ async def peek_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id
     
-    # Security Check
+    # 🔒 SECURITY CHECK
     if user_id != ADMIN_ID:
-        return # Ignore non-admins
+        await update.message.reply_text(
+            f"🚫 **You are not authorized!**\nPlease contact [Support]({UPDATE_CHANNEL_LINK}).",
+            parse_mode="Markdown",
+            disable_web_page_preview=True
+        )
+        return
         
     spawn = ACTIVE_SPAWNS.get(chat_id)
     if not spawn:
