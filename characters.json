@@ -1,20 +1,32 @@
 [
     {
-        "id": 1344,
+        "id": 1,
         "name": "Naruto Uzumaki",
         "image": "https://static.wikia.nocookie.net/naruto/images/d/d6/Naruto_Part_I.png",
         "rarity": "Legendary"
     },
     {
-        "id": 1307,
+        "id": 2,
         "name": "Sasuke Uchiha",
         "image": "https://static.wikia.nocookie.net/naruto/images/2/21/Sasuke_Part_1.png",
         "rarity": "Legendary"
     },
     {
-        "id": 456,
+        "id": 3,
+        "name": "Sakura Haruno",
+        "image": "https://static.wikia.nocookie.net/naruto/images/6/69/Sakura_Part_1.png",
+        "rarity": "Common"
+    },
+    {
+        "id": 4,
         "name": "Kakashi Hatake",
         "image": "https://static.wikia.nocookie.net/naruto/images/2/27/Kakashi_Hatake.png",
         "rarity": "Epic"
+    },
+    {
+        "id": 5,
+        "name": "Itachi Uchiha",
+        "image": "https://static.wikia.nocookie.net/naruto/images/b/bb/Itachi.png",
+        "rarity": "Legendary"
     }
 ]
