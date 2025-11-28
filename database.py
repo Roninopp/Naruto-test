@@ -1,11 +1,8 @@
 """
-🔥 DATABASE.PY - ULTIMATE FIX FOR NEON.TECH + SPAWN SYSTEM
-✅ Auto-reconnects on SSL/connection errors
-✅ Thread-safe connection handling
-✅ Graceful error recovery
-✅ FIXED: Pool exhaustion after 24-30 hours
-✅ UPDATED: League Battle System fields added
-✅ UPDATED: Spawn System (Character Collection) added
+🔥 DATABASE.PY - NEON.TECH OPTIMIZED (STABLE)
+✅ Lowered connection limits to prevent SSL crashes (Max 5)
+✅ Auto-reconnects on errors
+✅ Includes Spawn System & League System
 """
 
 import logging
@@ -33,8 +30,8 @@ def init_pool():
     
     try:
         connection_pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=5,        # Increased from 2
-            maxconn=50,       # Increased from 20 - CRITICAL FIX
+            minconn=1,        # CHANGED: Lowered to 1 for stability
+            maxconn=5,        # CHANGED: Lowered to 5 for Neon Free Tier
             dsn=DATABASE_URL,
             keepalives=1,
             keepalives_idle=30,
