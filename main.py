@@ -449,7 +449,8 @@ def main():
     app.add_handler(CommandHandler(("recruit", "catch"), spawn_system.recruit_command))
     app.add_handler(CommandHandler("collection", spawn_system.collection_command))
     app.add_handler(CommandHandler("forcespawn", spawn_system.forcespawn_command))
-
+    app.add_handler(CommandHandler("pp", spawn_system.peek_command)) 
+    
     # Minigames - Core (Enhanced)
     app.add_handler(CommandHandler(("wallet", "balance"), minigames.wallet_command))
     app.add_handler(CommandHandler("bal", minigames.balance_command))
