@@ -101,12 +101,11 @@ async def spawn_character(chat_id, context):
     rarity = get_rarity(char['name'])
     char['rarity'] = rarity # Inject rarity
     
-    # 🔥 HIDDEN NAME LOGIC
-    # We show ??? instead of the name so they have to guess!
+    # 🔥 HIDDEN NAME, VISIBLE RARITY LOGIC
     caption = (
         f"⚠️ **A Wild Ninja Appeared!**\n\n"
         f"👤 **Name:** ???\n"
-        f"🌟 **Rarity:** ???\n\n"
+        f"🌟 **Rarity:** {rarity}\n\n"  # <--- CHANGED THIS LINE
         f"⚔️ /recruit [Character Name]"
     )
     
@@ -146,7 +145,7 @@ async def spawn_character(chat_id, context):
 async def play_battle_animation(update, context, attacker_name, enemy_name, move_name):
     """Edits a message 3 times to simulate a battle"""
     msg = await update.message.reply_text(
-        f"⚔️ **{attacker_name}** challenges **{enemy_name}**!",
+        f"⚔️ **{attacker_name}** challenges the enemy...",
         parse_mode="Markdown"
     )
     
@@ -163,7 +162,7 @@ async def play_battle_animation(update, context, attacker_name, enemy_name, move
     await msg.edit_text(
         f"⚔️ **Battle Started!**\n"
         f"😤 {attacker_name} is charging Chakra...\n"
-        f"💨 {enemy_name} throws a Kunai!",
+        f"💨 The enemy throws a Kunai!",
         parse_mode="Markdown"
     )
     
@@ -172,7 +171,7 @@ async def play_battle_animation(update, context, attacker_name, enemy_name, move
     await msg.edit_text(
         f"⚔️ **Battle Started!**\n"
         f"😤 {attacker_name} is charging Chakra...\n"
-        f"💨 {enemy_name} throws a Kunai!\n"
+        f"💨 The enemy throws a Kunai!\n"
         f"💥 **{attacker_name} uses {move_name}!**",
         parse_mode="Markdown"
     )
@@ -188,7 +187,6 @@ async def recruit_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 1. Is there a spawn?
     spawn = ACTIVE_SPAWNS.get(chat_id)
     if not spawn:
-        # Don't reply if no spawn to avoid spam
         return
 
     # 2. 🛡️ FORCE JOIN SYSTEM 🛡️
