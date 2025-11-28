@@ -1,11 +1,10 @@
 """
-🔥 DATABASE.PY - ULTIMATE FIX FOR NEON.TECH + SPAWN SYSTEM
+🔥 DATABASE.PY - ULTIMATE FIX FOR NEON.TECH
 ✅ Auto-reconnects on SSL/connection errors
 ✅ Thread-safe connection handling
 ✅ Graceful error recovery
 ✅ FIXED: Pool exhaustion after 24-30 hours
 ✅ UPDATED: League Battle System fields added
-✅ UPDATED: Spawn System (Character Collection) added
 """
 
 import logging
@@ -56,6 +55,12 @@ def get_db_connection(retry_count=3):
     """
     Get connection with automatic retry and pool recreation.
     FIXED: Handles pool exhaustion properly
+    
+    Args:
+        retry_count: Number of retry attempts
+        
+    Returns:
+        Connection object or None
     """
     global connection_pool
     
@@ -153,6 +158,14 @@ def execute_with_retry(operation, *args, max_retries=3, **kwargs):
     """
     Execute database operation with automatic retry on connection errors.
     FIXED: Always returns connections to pool, prevents exhaustion
+    
+    Args:
+        operation: Function to execute (must accept conn as first arg)
+        *args, **kwargs: Arguments to pass to operation
+        max_retries: Maximum retry attempts
+        
+    Returns:
+        Result of operation or None on failure
     """
     conn = None  # Track connection
     
@@ -240,7 +253,6 @@ def create_tables():
                 ryo INTEGER DEFAULT 100, rank TEXT DEFAULT 'Academy Student',
                 wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0, battle_cooldown TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 equipment JSONB DEFAULT '{}'::jsonb, inventory JSONB DEFAULT '[]'::jsonb,
-                character_collection JSONB DEFAULT '{}'::jsonb,
                 daily_train_count INTEGER DEFAULT 0, last_train_reset_date DATE DEFAULT NULL,
                 story_progress INTEGER DEFAULT 0,
                 steal_cooldown TIMESTAMP DEFAULT NULL,
@@ -292,9 +304,6 @@ def update_schema():
     def _update_schema(conn):
         cols = {
             'players': [
-                # 🔥 NEW COLUMN FOR SPAWN SYSTEM 🔥
-                ('character_collection', "JSONB DEFAULT '{}'::jsonb"),
-                # Existing columns
                 ('equipment', "JSONB DEFAULT '{}'::jsonb"),
                 ('inventory', "JSONB DEFAULT '[]'::jsonb"),
                 ('daily_train_count', 'INTEGER DEFAULT 0'),
@@ -330,7 +339,7 @@ def update_schema():
                 ('active_guaranteed_kill', 'BOOLEAN DEFAULT FALSE'),
                 ('rob_boost_until', 'TIMESTAMP DEFAULT NULL'),
                 ('rob_boost_value', 'REAL DEFAULT 0'),
-                # 🎮 League Battle System Fields
+                # 🎮 NEW: League Battle System Fields
                 ('league_points', 'INTEGER DEFAULT 0'),
                 ('win_streak', 'INTEGER DEFAULT 0'),
                 ('battles_today', 'INTEGER DEFAULT 0'),
@@ -383,14 +392,13 @@ def get_player(user_id):
             r = c.fetchone()
             if r:
                 p = dict_factory(c, r)
-                # Set defaults for league & collection fields
+                # Set defaults for league fields if missing
                 p.setdefault('league_points', 0)
                 p.setdefault('win_streak', 0)
                 p.setdefault('battles_today', 0)
                 p.setdefault('total_battles', 0)
                 p.setdefault('daily_missions_data', {})
                 p.setdefault('daily_missions_reset', None)
-                p.setdefault('character_collection', {}) # 🔥 Default for new column
                 cache.set_player_cache(user_id, p)
                 return p
         return None
@@ -404,7 +412,7 @@ def create_player(user_id, username, village, auto_registered=False):
         
         sql = """INSERT INTO players 
         (user_id, username, village, max_hp, current_hp, max_chakra, current_chakra, 
-        strength, speed, intelligence, stamina, equipment, inventory, character_collection, daily_train_count, 
+        strength, speed, intelligence, stamina, equipment, inventory, daily_train_count, 
         last_train_reset_date, story_progress, known_jutsus, discovered_combinations, 
         steal_cooldown, scout_cooldown, assassinate_cooldown, daily_mission_count, 
         last_mission_reset_date, last_daily_claim, protection_until, hospitalized_until, 
@@ -414,15 +422,15 @@ def create_player(user_id, username, village, auto_registered=False):
         total_protections_bought, contracts_completed, legendary_items, auto_registered, 
         last_heat_decay, league_points, win_streak, battles_today, total_battles, 
         daily_missions_data, daily_missions_reset) 
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 
-        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 
+        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 
         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
         
         with conn.cursor() as c:
             c.execute(sql, (
                 user_id, username, village, s['max_hp'], s['max_hp'], s['max_chakra'], 
                 s['max_chakra'], s['strength'], s['speed'], s['intelligence'], s['stamina'], 
-                '{}', '[]', '{}', 0, None, 0, '[]', '[]', None, None, None, 0, None, None, None, 
+                '{}', '[]', 0, None, 0, '[]', '[]', None, None, None, 0, None, None, None, 
                 None, None, 0, None, None, 0, 0, 0, None, 0, 0, 0, 0, 0, 0, 0, 0, '[]', 
                 auto_registered, None, 0, 0, 0, 0, '{}', None
             ))
@@ -487,40 +495,6 @@ def atomic_add_exp(user_id, amount):
     result = execute_with_retry(_atomic_add_exp)
     return result if result else False
 
-# 🔥 NEW FUNCTION FOR SPAWN SYSTEM 🔥
-def add_character_to_collection(user_id, char_data):
-    """Add a caught character to the player's collection"""
-    def _add_char(conn):
-        with conn.cursor() as c:
-            # 1. Get current collection
-            c.execute("SELECT character_collection FROM players WHERE user_id = %s", (user_id,))
-            result = c.fetchone()
-            
-            # Initialize if null
-            collection = result[0] if result and result[0] else {}
-            
-            # 2. Add or Update character
-            char_id = str(char_data['id'])
-            if char_id in collection:
-                collection[char_id]['count'] += 1
-            else:
-                collection[char_id] = {
-                    'name': char_data['name'],
-                    'rarity': char_data.get('rarity', 'Common'),
-                    'image': char_data['image'],
-                    'count': 1,
-                    'caught_at': str(datetime.datetime.now())
-                }
-            
-            # 3. Save back to DB
-            c.execute("UPDATE players SET character_collection = %s WHERE user_id = %s", 
-                     (json.dumps(collection), user_id))
-        conn.commit()
-        cache.clear_player_cache(user_id)
-        return True
-    
-    return execute_with_retry(_add_char)
-
 # --- LEADERBOARD FUNCTIONS ---
 def get_top_players_by_ryo(limit=10):
     """Get top players by Ryo"""
@@ -562,7 +536,7 @@ def get_top_players_by_kills(limit=10):
     result = execute_with_retry(_get_top_kills)
     return result if result else []
 
-# 🎮 League Battle System Functions
+# 🎮 NEW: League Battle System Functions
 def get_top_players_by_league(limit=10):
     """Get top players by league points"""
     def _get_top_league(conn):

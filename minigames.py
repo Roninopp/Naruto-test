@@ -1,12 +1,11 @@
 """
-🎮 MINIGAMES.PY - Core Criminal Activities
+🎮 MINIGAMES.PY - Core Criminal Activities WITH AUTO-REGISTRATION
 Handles: Steal, Scout, Kill, Heal, Gift, Protect, Wallet
 
-Features:
-- Heat system integration
-- Reputation tracking
-- Bounty rewards
-- Escape mechanics
+✨ NEW FEATURES:
+- Automatic player registration on ANY command
+- Auto-register replied-to users
+- Seamless onboarding experience
 """
 
 import logging
@@ -20,7 +19,8 @@ from html import escape
 
 import database as db
 import game_logic as gl
-import minigames_v2 as mgv2  # Import advanced systems
+import minigames_v2 as mgv2
+from auto_register import auto_register_both_users, ensure_player_exists, get_welcome_message  # 🔥 NEW
 
 logger = logging.getLogger(__name__)
 
@@ -61,26 +61,36 @@ async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text, p
         except Exception as e:
             logger.error(f"Failed to send safe_reply: {e}")
 
+
 async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Enhanced wallet showing heat, bounty, and reputation."""
+    """Enhanced wallet showing heat, bounty, and reputation - WITH AUTO-REGISTRATION."""
     user = update.effective_user
     target_user = user
     
+    # Handle reply-to-user
     if update.message.reply_to_message:
         target_user = update.message.reply_to_message.from_user
         if target_user.is_bot:
-            await safe_reply(update, context, "Bots don't have wallets!")
+            await safe_reply(update, context, "🤖 Bots don't have wallets!")
             return
 
-    player = db.get_player(target_user.id)
+    # 🔥 AUTO-REGISTER BOTH USERS
+    sender_player, target_player, sender_new, target_new = auto_register_both_users(user, target_user if target_user.id != user.id else None)
+    
+    # If checking own wallet, use sender_player
+    if target_user.id == user.id:
+        player = sender_player
+        was_new = sender_new
+    else:
+        player = target_player
+        was_new = target_new
     
     if not player:
-        if target_user.id == user.id:
-            await safe_reply(update, context, f"Hey {user.mention_html()}! Please /register first.", parse_mode="HTML")
-        else:
-            await safe_reply(update, context, f"<b>{escape(target_user.first_name)}</b> is not registered.", parse_mode="HTML")
+        await safe_reply(update, context, "❌ Failed to load player data. Try again.")
         return
-
+    
+    # Silent auto-registration - no welcome messages
+    
     is_hosp, _ = gl.get_hospital_status(player)
     status_text = "🏥 Hospitalized" if is_hosp else "❤️ Alive"
     
@@ -91,11 +101,14 @@ async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rep_title = player.get('reputation_title')
     title_text = mgv2.REPUTATION_TITLES[rep_title]['name'] if rep_title in mgv2.REPUTATION_TITLES else "None"
     
-    # Get bounty
-    bounty = player.get('bounty', 0)
+    # Calculate dynamic bounty
+    bounty = mgv2.calculate_bounty(player)
+    if bounty != player.get('bounty', 0):
+        db.update_player(target_user.id, {'bounty': bounty})
     
     wallet_text = (
         f"<b>--- 🥷 {escape(target_user.first_name)}'s Profile 🥷 ---</b>\n\n"
+        f"<b>Village:</b> {player['village']}\n"
         f"<b>Rank:</b> {player['rank']}\n"
         f"<b>Level:</b> {player['level']}\n"
         f"<b>Ryo:</b> {player['ryo']:,} 💰\n\n"
@@ -116,49 +129,76 @@ async def wallet_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await safe_reply(update, context, wallet_text, parse_mode="HTML")
 
+
+async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Quick balance check - WITH AUTO-REGISTRATION."""
+    user = update.effective_user
+    
+    # 🔥 AUTO-REGISTER
+    player = ensure_player_exists(user.id, user.username or user.first_name)
+    
+    if not player:
+        await safe_reply(update, context, "❌ Registration failed. Try again.")
+        return
+    
+    is_hosp, _ = gl.get_hospital_status(player)
+    status = "🏥 Hospitalized" if is_hosp else "✅ Active"
+    
+    bounty = mgv2.calculate_bounty(player)
+    heat_emoji, _ = mgv2.get_heat_status(player.get('heat_level', 0))
+    
+    quick_text = (
+        f"💰 <b>{escape(user.first_name)}</b>\n"
+        f"├ Ryo: {player['ryo']:,} 💰\n"
+        f"├ Bounty: {bounty:,} Ryo\n"
+        f"├ Heat: {heat_emoji} {player.get('heat_level', 0)}/100\n"
+        f"└ Status: {status}"
+    )
+    
+    await safe_reply(update, context, quick_text, parse_mode="HTML")
+
+
 async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Rob with heat system and escape mechanics."""
+    """Rob with heat system and escape mechanics - WITH AUTO-REGISTRATION."""
     user = update.effective_user
     chat = update.effective_chat
     
     if chat.type == ChatType.PRIVATE:
-        await safe_reply(update, context, "You can only rob in group chats.")
+        await safe_reply(update, context, "⚠️ You can only rob in group chats.")
         return
     
     if not update.message.reply_to_message:
-        await safe_reply(update, context, "Reply to the user you want to rob and specify an amount. (e.g. /rob 70)")
+        await safe_reply(update, context, "⚠️ Reply to the user you want to rob and specify an amount.\nUsage: <code>/rob 70</code>", parse_mode="HTML")
         return
     
     victim_user = update.message.reply_to_message.from_user
     
     if victim_user.id == user.id or victim_user.is_bot:
-        await safe_reply(update, context, "Invalid target.")
+        await safe_reply(update, context, "❌ Invalid target.")
         return
 
     try:
         amount_to_steal = int(context.args[0])
     except (IndexError, ValueError):
-        await safe_reply(update, context, "You must specify how much to rob! Usage: `/rob <amount>`")
+        await safe_reply(update, context, "⚠️ You must specify how much to rob!\nUsage: <code>/rob &lt;amount&gt;</code>", parse_mode="HTML")
         return
         
     if amount_to_steal > STEAL_MAX_ROB_AMOUNT:
-        await safe_reply(update, context, f"You can only rob a maximum of **{STEAL_MAX_ROB_AMOUNT} Ryo** at a time.", parse_mode="HTML")
+        await safe_reply(update, context, f"⚠️ You can only rob a maximum of **{STEAL_MAX_ROB_AMOUNT} Ryo** at a time.", parse_mode="HTML")
         return
     
     if amount_to_steal <= 0:
-        await safe_reply(update, context, "You must rob a positive amount.")
+        await safe_reply(update, context, "⚠️ You must rob a positive amount.")
         return
 
-    stealer = db.get_player(user.id)
-    victim = db.get_player(victim_user.id)
+    # 🔥 AUTO-REGISTER BOTH USERS
+    stealer, victim, stealer_new, victim_new = auto_register_both_users(user, victim_user)
     
-    if not stealer:
-        await safe_reply(update, context, f"{user.mention_html()}, please /register first!", parse_mode="HTML")
+    if not stealer or not victim:
+        await safe_reply(update, context, "❌ Registration failed. Try again.")
         return
     
-    if not victim:
-        await safe_reply(update, context, f"{victim_user.mention_html()} is not a registered ninja.", parse_mode="HTML")
-        return
+    # Silent auto-registration - no welcome messages
     
     is_hospitalized, remaining = gl.get_hospital_status(stealer)
     if is_hospitalized:
@@ -166,7 +206,7 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if victim['ryo'] < amount_to_steal:
-        await safe_reply(update, context, f"<b>{escape(victim_user.first_name)}</b> doesn't have that much Ryo! (They have {victim['ryo']} Ryo).", parse_mode="HTML")
+        await safe_reply(update, context, f"⚠️ <b>{escape(victim_user.first_name)}</b> doesn't have that much Ryo! (They have {victim['ryo']} Ryo).", parse_mode="HTML")
         return
         
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -187,6 +227,24 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rob_success_bonus = rep_bonuses.get('rob_success', 0)
     rob_amount_bonus = rep_bonuses.get('rob_amount', 1.0)
     
+    # 🔥 Check for Stealth Cloak boost
+    rob_boost_until = stealer.get('rob_boost_until')
+    extra_rob_bonus = 0
+    if rob_boost_until:
+        if isinstance(rob_boost_until, str):
+            rob_boost_until = datetime.datetime.fromisoformat(rob_boost_until)
+        if rob_boost_until.tzinfo is None:
+            rob_boost_until = rob_boost_until.replace(tzinfo=datetime.timezone.utc)
+        
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        if now_utc < rob_boost_until:
+            # Boost is still active!
+            extra_rob_bonus = stealer.get('rob_boost_value', 0)
+        else:
+            # Boost expired, clear it
+            stealer_updates['rob_boost_until'] = None
+            stealer_updates['rob_boost_value'] = 0
+    
     # Heat affects success
     heat_level = stealer.get('heat_level', 0)
     heat_penalty = heat_level * 0.003
@@ -194,7 +252,7 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stealer_stats = gl.get_total_stats(stealer)
     
     fail_chance = max(0.05, STEAL_BASE_FAIL_CHANCE + heat_penalty - min(0.10, stealer_stats['speed'] * 0.005))
-    success_chance = STEAL_BASE_SUCCESS_CHANCE + rob_success_bonus + min(0.20, stealer_stats['speed'] * 0.01) - heat_penalty
+    success_chance = STEAL_BASE_SUCCESS_CHANCE + rob_success_bonus + extra_rob_bonus + min(0.20, stealer_stats['speed'] * 0.01) - heat_penalty
     
     roll = random.random()
     
@@ -273,15 +331,18 @@ async def steal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         # NEUTRAL
         db.update_player(user.id, stealer_updates)
-        await safe_reply(update, context, "Failed to find anything.")
+        await safe_reply(update, context, "❌ Failed to find anything.")
+
 
 async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Scout with reputation bonuses."""
+    """Scout with reputation bonuses - WITH AUTO-REGISTRATION."""
     user = update.effective_user
-    player = db.get_player(user.id)
+    
+    # 🔥 AUTO-REGISTER
+    player = ensure_player_exists(user.id, user.username or user.first_name)
     
     if not player:
-        await safe_reply(update, context, f"{user.mention_html()}, please /register first!", parse_mode="HTML")
+        await safe_reply(update, context, "❌ Registration failed. Try again.")
         return
     
     hosp, rem = gl.get_hospital_status(player)
@@ -295,7 +356,7 @@ async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if cd.tzinfo is None:
             cd = cd.replace(tzinfo=datetime.timezone.utc)
         if now < cd:
-            await safe_reply(update, context, f"Scout again in {(cd - now).total_seconds()/60:.0f}m.")
+            await safe_reply(update, context, f"⏳ Scout again in {(cd - now).total_seconds()/60:.0f}m.")
             return
     
     # Reputation bonus
@@ -322,42 +383,45 @@ async def scout_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if new_title:
             db.update_player(user.id, {'reputation_title': new_title})
         
-        await safe_reply(update, context, f"Found a hidden training ground! **+{exp_reward} EXP**! ⭐ +5 Rep{title_text}", parse_mode="HTML")
+        await safe_reply(update, context, f"🎓 Found a hidden training ground! **+{exp_reward} EXP**! ⭐ +5 Rep{title_text}", parse_mode="HTML")
         
     elif roll < (SCOUT_EXP_CHANCE + SCOUT_RYO_CHANCE):
         ryo_reward = int(SCOUT_RYO_REWARD * scout_multiplier)
         player_updates['ryo'] = player['ryo'] + ryo_reward
         db.update_player(user.id, player_updates)
-        await safe_reply(update, context, f"Found a lost wallet! **+{ryo_reward} Ryo**. ⭐ +5 Rep", parse_mode="HTML")
+        await safe_reply(update, context, f"💰 Found a lost wallet! **+{ryo_reward} Ryo**. ⭐ +5 Rep", parse_mode="HTML")
     else:
         db.update_player(user.id, player_updates)
-        await safe_reply(update, context, "You scouted but found nothing. ⭐ +5 Rep")
+        await safe_reply(update, context, "🔍 You scouted but found nothing. ⭐ +5 Rep")
+
 
 async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Kill with bounty rewards and loot drops."""
+    """Kill with bounty rewards and loot drops - WITH AUTO-REGISTRATION."""
     user = update.effective_user
     chat = update.effective_chat
     
-    if chat.type == ChatType.PRIVATE or not update.message.reply_to_message:
-        await safe_reply(update, context, "Reply to target in a group.")
+    if chat.type == ChatType.PRIVATE:
+        await safe_reply(update, context, "⚠️ You can only kill in group chats.")
+        return
+    
+    if not update.message.reply_to_message:
+        await safe_reply(update, context, "⚠️ Reply to the target you want to kill.")
         return
     
     victim_user = update.message.reply_to_message.from_user
     
     if victim_user.id == user.id or victim_user.is_bot:
-        await safe_reply(update, context, "Invalid target.")
+        await safe_reply(update, context, "❌ Invalid target.")
         return
     
-    attacker = db.get_player(user.id)
-    victim = db.get_player(victim_user.id)
+    # 🔥 AUTO-REGISTER BOTH USERS
+    attacker, victim, attacker_new, victim_new = auto_register_both_users(user, victim_user)
     
-    if not attacker:
-        await safe_reply(update, context, f"{user.mention_html()}, please /register first!", parse_mode="HTML")
+    if not attacker or not victim:
+        await safe_reply(update, context, "❌ Registration failed. Try again.")
         return
     
-    if not victim:
-        await safe_reply(update, context, f"<b>{escape(victim_user.first_name)}</b> is not registered.", parse_mode="HTML")
-        return
+    # Silent auto-registration - no welcome messages
     
     is_hospitalized, remaining = gl.get_hospital_status(attacker)
     if is_hospitalized:
@@ -382,13 +446,22 @@ async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_reply(update, context, f"🥵 Need {KILL_CHAKRA_COST} Chakra!", parse_mode="HTML")
         return
     
+    # 🔥 Initialize attacker_updates FIRST
+    attacker_updates = {'current_chakra': attacker['current_chakra'] - KILL_CHAKRA_COST}
+    
     # Reputation bonus
     rep_bonuses = mgv2.get_reputation_bonuses(attacker)
     kill_bonus = rep_bonuses.get('kill_success', 0)
     
-    success_chance = KILL_BASE_SUCCESS + kill_bonus
+    # 🔥 Check for Gold Kunai (guaranteed kill)
+    has_gold_kunai = attacker.get('active_guaranteed_kill', False)
     
-    attacker_updates = {'current_chakra': attacker['current_chakra'] - KILL_CHAKRA_COST}
+    if has_gold_kunai:
+        success_chance = 1.0  # 100% guaranteed!
+        # Deactivate after use
+        attacker_updates['active_guaranteed_kill'] = False
+    else:
+        success_chance = KILL_BASE_SUCCESS + kill_bonus
     
     if random.random() < success_chance:
         # Calculate bounty
@@ -452,43 +525,42 @@ async def kill_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.update_player(user.id, attacker_updates)
         await safe_reply(update, context, f"💨 <b>MISSED!</b>\n{escape(victim_user.first_name)} escaped!", parse_mode="HTML")
 
+
 async def gift_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Gift with reputation tracking."""
+    """Gift with reputation tracking - WITH AUTO-REGISTRATION."""
     user = update.effective_user
     
     if not update.message.reply_to_message:
-        await safe_reply(update, context, "Reply to user to gift.")
+        await safe_reply(update, context, "⚠️ Reply to user to gift Ryo.")
         return
     
     victim = update.message.reply_to_message.from_user
     
     if victim.id == user.id or victim.is_bot:
-        await safe_reply(update, context, "Invalid target.")
+        await safe_reply(update, context, "❌ Invalid target.")
         return
     
     try:
         amount = int(context.args[0])
     except:
-        await safe_reply(update, context, "Usage: `/gift <amount>`")
+        await safe_reply(update, context, "⚠️ Usage: <code>/gift &lt;amount&gt;</code>", parse_mode="HTML")
         return
     
     if amount <= 0:
-        await safe_reply(update, context, "Positive only.")
+        await safe_reply(update, context, "⚠️ Amount must be positive.")
         return
     
-    sender = db.get_player(user.id)
-    receiver = db.get_player(victim.id)
+    # 🔥 AUTO-REGISTER BOTH USERS
+    sender, receiver, sender_new, receiver_new = auto_register_both_users(user, victim)
     
-    if not sender:
-        await safe_reply(update, context, f"{user.mention_html()}, please /register first!", parse_mode="HTML")
+    if not sender or not receiver:
+        await safe_reply(update, context, "❌ Registration failed. Try again.")
         return
     
-    if not receiver:
-        await safe_reply(update, context, f"{victim.mention_html()} is not registered.", parse_mode="HTML")
-        return
+    # Silent auto-registration - no welcome messages
     
     if sender['ryo'] < amount:
-        await safe_reply(update, context, "Not enough Ryo!")
+        await safe_reply(update, context, "❌ Not enough Ryo!")
         return
     
     final = amount - int(amount * GIFT_TAX_PERCENT)
@@ -504,20 +576,23 @@ async def gift_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await safe_reply(update, context, f"🎁 **GIFT SENT!**\n<b>{escape(user.first_name)}</b> gifted **{amount:,} Ryo** to <b>{escape(victim.first_name)}</b>!\n<i>(Tax: {amount - final} Ryo)</i>\n⭐ +5 Rep", parse_mode="HTML")
 
+
 async def protect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Protection with reputation bonuses."""
+    """Protection with reputation bonuses - WITH AUTO-REGISTRATION."""
     user = update.effective_user
-    player = db.get_player(user.id)
+    
+    # 🔥 AUTO-REGISTER
+    player = ensure_player_exists(user.id, user.username or user.first_name)
     
     if not player:
-        await safe_reply(update, context, f"{user.mention_html()}, please /register first!", parse_mode="HTML")
+        await safe_reply(update, context, "❌ Registration failed. Try again.")
         return
     
     days = 3 if (context.args and context.args[0].lower() == '3d') else 1
     cost = PROTECT_3D_COST if days == 3 else PROTECT_1D_COST
     
     if player['ryo'] < cost:
-        await safe_reply(update, context, f"Need **{cost} Ryo** for {days}d protection.", parse_mode="HTML")
+        await safe_reply(update, context, f"⚠️ Need **{cost} Ryo** for {days}d protection.", parse_mode="HTML")
         return
     
     # Reputation bonus
@@ -542,28 +617,35 @@ async def protect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bonus_text = f" (+{actual_days - days} bonus days!)" if actual_days > days else ""
     await safe_reply(update, context, f"🛡️ <b>ANBU GUARD HIRED!</b>\nProtected for **{actual_days} day(s)**!{bonus_text}", parse_mode="HTML")
 
+
 async def heal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Heal with reputation tracking."""
+    """Heal with reputation tracking - WITH AUTO-REGISTRATION."""
     user = update.effective_user
-    payer = db.get_player(user.id)
+    
+    # 🔥 AUTO-REGISTER
+    payer = ensure_player_exists(user.id, user.username or user.first_name)
     
     if not payer:
-        await safe_reply(update, context, f"{user.mention_html()}, please /register first!", parse_mode="HTML")
+        await safe_reply(update, context, "❌ Registration failed. Try again.")
         return
     
     target_id = user.id
     target_name = "You are"
+    target_user = user
     
     if update.message.reply_to_message:
         target_user = update.message.reply_to_message.from_user
         if not target_user.is_bot:
-            target_id = target_user.id
-            target_name = f"<b>{escape(target_user.first_name)}</b> is"
+            # 🔥 AUTO-REGISTER TARGET
+            target = ensure_player_exists(target_user.id, target_user.username or target_user.first_name)
+            if target:
+                target_id = target_user.id
+                target_name = f"<b>{escape(target_user.first_name)}</b> is"
     
     target = db.get_player(target_id)
     
     if not target:
-        await safe_reply(update, context, "Target not registered.")
+        await safe_reply(update, context, "❌ Target not registered.")
         return
     
     hosp, _ = gl.get_hospital_status(target)
@@ -572,7 +654,7 @@ async def heal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     if payer['ryo'] < HEAL_COST:
-        await safe_reply(update, context, f"Need **{HEAL_COST} Ryo** for medical ninjutsu.", parse_mode="HTML")
+        await safe_reply(update, context, f"⚠️ Need **{HEAL_COST} Ryo** for medical ninjutsu.", parse_mode="HTML")
         return
     
     db.update_player(user.id, {'ryo': payer['ryo'] - HEAL_COST})
@@ -598,7 +680,8 @@ async def heal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await safe_reply(update, context, f"💚 <b>MEDICAL NINJUTSU!</b> 💚\n{target_name} fully healed!", parse_mode="HTML")
 
-# 🆕 ESCAPE CALLBACK HANDLER
+
+# 🔥 ESCAPE CALLBACK HANDLER (NO CHANGES NEEDED - ALREADY WORKS)
 async def escape_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles escape mini-game when caught robbing."""
     query = update.callback_query
@@ -614,7 +697,7 @@ async def escape_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if query.from_user.id != user_id:
         try:
-            await query.answer("This is not your escape!", show_alert=True)
+            await query.answer("❌ This is not your escape!", show_alert=True)
         except:
             pass
         return
@@ -687,7 +770,7 @@ async def escape_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             db.atomic_add_ryo(user_id, -lose)
     else:
-        result = "Invalid escape option!"
+        result = "❌ Invalid escape option!"
     
     try:
         await query.edit_message_text(result, parse_mode="HTML")

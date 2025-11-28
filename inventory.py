@@ -21,11 +21,12 @@ async def inventory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("You must /start your journey first.")
         return
 
-    try:
-        inventory_list = json.loads(player['inventory']) # ['health_potion', 'health_potion']
-    except json.JSONDecodeError:
-        inventory_list = []
-        logger.error(f"Error decoding inventory JSON for user {user.id}")
+    # --- THIS IS THE FIX ---
+    # The database (JSONB) and cache (json.loads) already return a Python LIST, not a string.
+    # We must remove json.loads() to prevent the TypeError.
+    # We just get the list directly, or an empty list if it's None.
+    inventory_list = player.get('inventory') or []
+    # --- END OF FIX ---
 
     if not inventory_list:
         await update.message.reply_text("🎒 Your inventory is empty.")

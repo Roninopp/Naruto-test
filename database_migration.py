@@ -6,7 +6,6 @@ Usage: python database_migration.py
 """
 
 import psycopg2
-import psycopg2.pool
 import logging
 
 logging.basicConfig(level=logging.INFO)

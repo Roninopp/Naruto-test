@@ -75,14 +75,14 @@ GAME_ENEMIES = {
 
 # Player Jutsu Options
 PLAYER_JUTSUS = {
-    'f': {'name': '🔥 Fireball', 'type': 'f', 'power': 25, 'chakra': 15},
-    'sc': {'name': '🌀 Shadow Clone', 'type': 'n', 'power': 20, 'chakra': 20},
-    'wa': {'name': '🌊 Water Dragon', 'type': 'wa', 'power': 30, 'chakra': 25},
-    'l': {'name': '⚡ Lightning Blade', 'type': 'l', 'power': 35, 'chakra': 30},
-    'r': {'name': '💫 Rasengan', 'type': 'n', 'power': 40, 'chakra': 35},
-    'g': {'name': '👁️ Genjutsu', 'type': 'g', 'power': 28, 'chakra': 20},
+    'f': {'name': '🔥 Fireball', 'type': 'f', 'power': 25, 'chakra': 15, 'heal': 0},
+    'sc': {'name': '🌀 Shadow Clone', 'type': 'n', 'power': 20, 'chakra': 20, 'heal': 0},
+    'wa': {'name': '🌊 Water Dragon', 'type': 'wa', 'power': 30, 'chakra': 25, 'heal': 0},
+    'l': {'name': '⚡ Lightning Blade', 'type': 'l', 'power': 35, 'chakra': 30, 'heal': 0},
+    'r': {'name': '💫 Rasengan', 'type': 'n', 'power': 40, 'chakra': 35, 'heal': 0},
+    'g': {'name': '👁️ Genjutsu', 'type': 'g', 'power': 28, 'chakra': 20, 'heal': 0},
     'h': {'name': '💚 Heal', 'type': 'heal', 'power': 0, 'chakra': 25, 'heal': 30},
-    't': {'name': '👊 Taijutsu', 'type': 't', 'power': 15, 'chakra': 5}
+    't': {'name': '👊 Taijutsu', 'type': 't', 'power': 15, 'chakra': 5, 'heal': 0}
 }
 
 def health_bar(current, max_hp, length=10):
@@ -279,7 +279,12 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 async def jutsu_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles button clicks in jutsu battle games."""
     query = update.callback_query
-    await query.answer()
+    
+    # Try to answer query, but don't fail if it's too old
+    try:
+        await query.answer()
+    except Exception as e:
+        logger.warning(f"Could not answer callback query: {e}")
     
     parts = query.data.split('_')
     if len(parts) < 3:
@@ -289,17 +294,33 @@ async def jutsu_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     player = db.get_player(query.from_user.id)
     if not player:
-        await query.answer("You need to register first!", show_alert=True)
+        try:
+            await query.answer("You need to register first!", show_alert=True)
+        except:
+            pass
         return
     
     # START NEW GAME
     if action == 'start':
-        if player['ryo'] < 50:
-            await query.answer("Not enough Ryo! Need 50 Ryo to play.", show_alert=True)
-            return
-        
         game_id = parts[2]
         enemy_key = parts[3]
+        
+        # Check if this game already started by someone else
+        if game_id in ACTIVE_GAMES:
+            if ACTIVE_GAMES[game_id]['player_id'] != query.from_user.id:
+                try:
+                    await query.answer("🚫 Someone else already started this battle! Start your own via inline mode.", show_alert=True)
+                except:
+                    pass
+                return
+        
+        if player['ryo'] < 50:
+            try:
+                await query.answer("❌ Not enough Ryo! Need 50 Ryo to play.", show_alert=True)
+            except:
+                pass
+            return
+        
         enemy_data = GAME_ENEMIES.get(enemy_key)
         
         if not enemy_data:
@@ -367,26 +388,48 @@ async def jutsu_game_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         jutsu_key = parts[3]
         
         game_state = ACTIVE_GAMES.get(game_id)
-        if not game_state or game_state['player_id'] != query.from_user.id:
-            await query.answer("This is not your game!", show_alert=True)
+        if not game_state:
+            try:
+                await query.answer("⚠️ Game expired! Start a new game.", show_alert=True)
+            except:
+                pass
+            return
+        
+        if game_state['player_id'] != query.from_user.id:
+            try:
+                await query.answer("🚫 This is not your game! Start your own battle via inline mode.", show_alert=True)
+            except:
+                pass
             return
         
         enemy_data = GAME_ENEMIES[game_state['enemy_key']]
-        player_jutsu = PLAYER_JUTSUS[jutsu_key]
+        player_jutsu = PLAYER_JUTSUS.get(jutsu_key)
+        
+        if not player_jutsu:
+            try:
+                await query.answer("⚠️ Invalid jutsu!", show_alert=True)
+            except:
+                pass
+            return
         
         # Check chakra
         if game_state['player_chakra'] < player_jutsu['chakra']:
-            await query.answer("Not enough chakra!", show_alert=True)
+            try:
+                await query.answer("❌ Not enough chakra!", show_alert=True)
+            except:
+                pass
             return
         
         # Player turn
         game_state['player_chakra'] -= player_jutsu['chakra']
         
-        if player_jutsu['type'] == 'heal':
+        if player_jutsu.get('heal', 0) > 0:
+            # Healing jutsu
             heal_amount = min(player_jutsu['heal'], 100 - game_state['player_hp'])
-            game_state['player_hp'] += heal_amount
+            game_state['player_hp'] = min(100, game_state['player_hp'] + heal_amount)
             game_state['log'].append(f"💚 You healed {heal_amount} HP!")
         else:
+            # Attack jutsu
             # Calculate damage
             damage = player_jutsu['power']
             

@@ -51,9 +51,6 @@ import auto_register  # 🔥 AUTO-REGISTRATION
 import data           # 🔥 LOGGING MODULE
 import ai_chat        # 🔥 NEW: AI CHAT MODULE
 
-# 🔥 NEW IMPORT: SPAWN SYSTEM
-import spawn_system
-
 # --- Constants ---
 BOT_TOKEN = "8280105345:AAHJY49dOD-YCjasJZ1RoDJ6mtblnndXsyI"
 START_IMAGE_URL = "https://envs.sh/r6z.jpg" 
@@ -445,11 +442,6 @@ def main():
     app.add_handler(CommandHandler("help", help_handler.show_main_help_menu))
     app.add_handler(CommandHandler("inventory", inventory.inventory_command))
 
-    # 🔥 NEW: SPAWN SYSTEM HANDLERS
-    app.add_handler(CommandHandler(("recruit", "catch"), spawn_system.recruit_command))
-    app.add_handler(CommandHandler("collection", spawn_system.collection_command))
-    app.add_handler(CommandHandler("forcespawn", spawn_system.forcespawn_command))
-
     # Minigames - Core (Enhanced)
     app.add_handler(CommandHandler(("wallet", "balance"), minigames.wallet_command))
     app.add_handler(CommandHandler("bal", minigames.balance_command))
@@ -532,12 +524,6 @@ def main():
     app.add_handler(CallbackQueryHandler(help_handler.show_main_help_menu, pattern="^show_main_help$"))
     app.add_handler(CallbackQueryHandler(help_handler.show_module_help, pattern="^help_module_"))
     app.add_handler(CallbackQueryHandler(help_handler.back_to_main_help_callback, pattern="^back_to_main_help$"))
-
-    # 🔥 SPAWN SYSTEM TRIGGER (Checks every message, runs in Group 5)
-    app.add_handler(MessageHandler(
-        filters.TEXT & (~filters.COMMAND), 
-        spawn_system.trigger_spawn_on_message
-    ), group=5)
     
     # 🔥 UPDATED: Now accepts TEXT AND STICKERS with CORRECT Filter
     app.add_handler(MessageHandler((filters.TEXT | filters.Sticker.ALL) & (~filters.COMMAND), ai_chat.naruto_chat_handler), group=2)

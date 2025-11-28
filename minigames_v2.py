@@ -8,6 +8,7 @@ Features:
 - Contract board
 - Loot drop mechanics
 - Bounty calculations
+- 🔥 AUTO-REGISTRATION ENABLED
 """
 
 import logging
@@ -21,6 +22,7 @@ from html import escape
 
 import database as db
 import game_logic as gl
+from auto_register import ensure_player_exists, auto_register_both_users  # 🔥 AUTO-REGISTRATION
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +205,7 @@ def roll_for_loot(player):
 
 # --- COMMAND FUNCTIONS ---
 async def safe_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, text, parse_mode=None, reply_markup=None):
+    """Safe reply that handles BadRequest errors."""
     try:
         await update.message.reply_text(text, parse_mode=parse_mode, reply_markup=reply_markup)
     except BadRequest:
@@ -215,7 +218,7 @@ async def bounty_board_command(update: Update, context: ContextTypes.DEFAULT_TYP
     """Shows top 10 players with bounties."""
     conn = db.get_db_connection()
     if not conn:
-        await safe_reply(update, context, "Database error!")
+        await safe_reply(update, context, "❌ Database error!")
         return
     
     try:
@@ -252,7 +255,7 @@ async def bounty_board_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     except Exception as e:
         logger.error(f"Bounty board error: {e}")
-        await safe_reply(update, context, "Error loading bounty board!")
+        await safe_reply(update, context, "❌ Error loading bounty board!")
     finally:
         db.put_db_connection(conn)
 
@@ -260,7 +263,7 @@ async def contracts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Shows active contracts."""
     conn = db.get_db_connection()
     if not conn:
-        await safe_reply(update, context, "Database error!")
+        await safe_reply(update, context, "❌ Database error!")
         return
     
     try:
@@ -296,52 +299,49 @@ async def contracts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     except Exception as e:
         logger.error(f"Contracts error: {e}")
-        await safe_reply(update, context, "Error loading contracts!")
+        await safe_reply(update, context, "❌ Error loading contracts!")
     finally:
         db.put_db_connection(conn)
 
 async def place_contract_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Place a contract on someone."""
+    """Place a contract on someone - WITH AUTO-REGISTRATION."""
     user = update.effective_user
     
     if not update.message.reply_to_message:
-        await safe_reply(update, context, "Reply to the target and specify reward. Usage: `/contract <amount>`")
+        await safe_reply(update, context, "⚠️ Reply to the target and specify reward.\nUsage: <code>/contract &lt;amount&gt;</code>", parse_mode="HTML")
         return
     
     target_user = update.message.reply_to_message.from_user
     
     if target_user.id == user.id or target_user.is_bot:
-        await safe_reply(update, context, "Invalid target!")
+        await safe_reply(update, context, "❌ Invalid target!")
         return
     
     try:
         reward = int(context.args[0])
     except:
-        await safe_reply(update, context, "Specify reward amount! Usage: `/contract <amount>`")
+        await safe_reply(update, context, "⚠️ Specify reward amount!\nUsage: <code>/contract &lt;amount&gt;</code>", parse_mode="HTML")
         return
     
     if reward < 500:
-        await safe_reply(update, context, "Minimum contract is 500 Ryo!")
+        await safe_reply(update, context, "⚠️ Minimum contract is 500 Ryo!")
         return
     
-    player = db.get_player(user.id)
-    target = db.get_player(target_user.id)
+    # 🔥 AUTO-REGISTER BOTH USERS
+    player, target, player_new, target_new = auto_register_both_users(user, target_user)
     
-    if not player:
-        await safe_reply(update, context, f"{user.mention_html()}, please /register first!", parse_mode="HTML")
-        return
-    
-    if not target:
-        await safe_reply(update, context, "Target is not registered!")
+    if not player or not target:
+        await safe_reply(update, context, "❌ Registration failed. Try again!")
         return
     
     if player['ryo'] < reward:
-        await safe_reply(update, context, "Not enough Ryo!")
+        await safe_reply(update, context, "❌ Not enough Ryo!")
         return
     
     # Place contract
     conn = db.get_db_connection()
     if not conn:
+        await safe_reply(update, context, "❌ Database error!")
         return
     
     try:
@@ -377,17 +377,19 @@ async def place_contract_command(update: Update, context: ContextTypes.DEFAULT_T
     except Exception as e:
         logger.error(f"Place contract error: {e}")
         conn.rollback()
-        await safe_reply(update, context, "Failed to place contract!")
+        await safe_reply(update, context, "❌ Failed to place contract!")
     finally:
         db.put_db_connection(conn)
 
 async def inventory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Shows legendary items inventory."""
+    """Shows legendary items inventory - WITH AUTO-REGISTRATION."""
     user = update.effective_user
-    player = db.get_player(user.id)
+    
+    # 🔥 AUTO-REGISTER
+    player = ensure_player_exists(user.id, user.username or user.first_name)
     
     if not player:
-        await safe_reply(update, context, f"{user.mention_html()}, please /register first!", parse_mode="HTML")
+        await safe_reply(update, context, "❌ Registration failed. Try again.")
         return
     
     legendary_items = player.get('legendary_items', [])
@@ -410,39 +412,113 @@ async def inventory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def use_item_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle using legendary items."""
     query = update.callback_query
-    await query.answer()
     
-    player = db.get_player(query.from_user.id)
-    if not player:
-        return
+    # Check if this is selecting an item or showing the menu
+    if query.data == "use_legendary_item":
+        # Show item selection menu
+        await query.answer()
+        
+        # 🔥 AUTO-REGISTER
+        player = ensure_player_exists(query.from_user.id, query.from_user.username or query.from_user.first_name)
+        
+        if not player:
+            await query.edit_message_text("❌ Player data not found!")
+            return
+        
+        items = player.get('legendary_items', [])
+        
+        if not items:
+            await query.edit_message_text("You don't have any items!")
+            return
+        
+        # Show item selection
+        keyboard = []
+        for item_key in items:
+            item = LEGENDARY_ITEMS.get(item_key)
+            if item:
+                keyboard.append([InlineKeyboardButton(item['name'], callback_data=f"use_item_{item_key}")])
+        
+        keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_item_use")])
+        
+        await query.edit_message_text(
+            "Select an item to use:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
     
-    items = player.get('legendary_items', [])
-    
-    if not items:
-        await query.edit_message_text("You don't have any items!")
-        return
-    
-    # Show item selection
-    keyboard = []
-    for item_key in items:
+    elif query.data.startswith("use_item_"):
+        # Actually USE the item
+        item_key = query.data.replace("use_item_", "")
+        
+        # 🔥 AUTO-REGISTER
+        player = ensure_player_exists(query.from_user.id, query.from_user.username or query.from_user.first_name)
+        
+        if not player:
+            await query.answer("❌ Player data not found!", show_alert=True)
+            return
+        
+        items = player.get('legendary_items', [])
+        
+        if item_key not in items:
+            await query.answer("❌ You don't have this item!", show_alert=True)
+            return
+        
         item = LEGENDARY_ITEMS.get(item_key)
-        if item:
-            keyboard.append([InlineKeyboardButton(item['name'], callback_data=f"use_item_{item_key}")])
+        if not item:
+            await query.answer("❌ Invalid item!", show_alert=True)
+            return
+        
+        # Apply item effect
+        result_msg = ""
+        updates = {}
+        
+        if item['effect'] == 'guaranteed_kill':
+            # Store active effect
+            updates['active_guaranteed_kill'] = True
+            result_msg = f"✨ <b>{item['name']} ACTIVATED!</b>\n\nYour next /kill will be guaranteed to succeed!"
+        
+        elif item['effect'] == 'exp_boost':
+            exp_gain = item['value']
+            updates['exp'] = player['exp'] + exp_gain
+            updates['total_exp'] = player['total_exp'] + exp_gain
+            result_msg = f"✨ <b>{item['name']} USED!</b>\n\n+{exp_gain} EXP gained!"
+        
+        elif item['effect'] == 'chakra_restore':
+            chakra_restore = item['value']
+            player_stats = gl.get_total_stats(player)
+            new_chakra = min(player['current_chakra'] + chakra_restore, player_stats['max_chakra'])
+            updates['current_chakra'] = new_chakra
+            result_msg = f"✨ <b>{item['name']} USED!</b>\n\n+{chakra_restore} Chakra restored!\nCurrent: {new_chakra}/{player_stats['max_chakra']}"
+        
+        elif item['effect'] == 'rob_boost':
+            # Store temporary boost (expires in 1 hour)
+            boost_until = datetime.datetime.now(timezone.utc) + datetime.timedelta(hours=1)
+            updates['rob_boost_until'] = boost_until.isoformat()
+            updates['rob_boost_value'] = item['value']
+            result_msg = f"✨ <b>{item['name']} ACTIVATED!</b>\n\n+{int(item['value']*100)}% rob success for 1 hour!"
+        
+        # Remove item from inventory
+        items.remove(item_key)
+        updates['legendary_items'] = items
+        
+        # Update player
+        db.update_player(query.from_user.id, updates)
+        
+        await query.answer("✅ Item used!", show_alert=False)
+        await query.edit_message_text(result_msg, parse_mode="HTML")
     
-    keyboard.append([InlineKeyboardButton("❌ Cancel", callback_data="cancel_item_use")])
-    
-    await query.edit_message_text(
-        "Select an item to use:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    elif query.data == "cancel_item_use":
+        await query.answer()
+        await query.edit_message_text("❌ Cancelled.")
 
 async def reputation_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Shows reputation status and progress to titles."""
+    """Shows reputation status and progress to titles - WITH AUTO-REGISTRATION."""
     user = update.effective_user
-    player = db.get_player(user.id)
+    
+    # 🔥 AUTO-REGISTER
+    player = ensure_player_exists(user.id, user.username or user.first_name)
     
     if not player:
-        await safe_reply(update, context, f"{user.mention_html()}, please /register first!", parse_mode="HTML")
+        await safe_reply(update, context, "❌ Registration failed. Try again.")
         return
     
     current_title = player.get('reputation_title')
@@ -478,12 +554,14 @@ async def reputation_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await safe_reply(update, context, text, parse_mode="HTML")
 
 async def heat_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Shows heat level and cooldown info."""
+    """Shows heat level and cooldown info - WITH AUTO-REGISTRATION."""
     user = update.effective_user
-    player = db.get_player(user.id)
+    
+    # 🔥 AUTO-REGISTER
+    player = ensure_player_exists(user.id, user.username or user.first_name)
     
     if not player:
-        await safe_reply(update, context, f"{user.mention_html()}, please /register first!", parse_mode="HTML")
+        await safe_reply(update, context, "❌ Registration failed. Try again.")
         return
     
     heat_level = player.get('heat_level', 0)

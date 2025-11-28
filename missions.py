@@ -7,6 +7,7 @@ from telegram.ext import ContextTypes
 # Import our database and game_logic functions
 import database as db
 import game_logic as gl
+from auto_register import ensure_player_exists  # 🔥 AUTO-REGISTRATION
 
 logger = logging.getLogger(__name__)
 
@@ -19,13 +20,13 @@ DAILY_MISSION_LIMIT = 3
 async def missions_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays available missions to the player."""
     user = update.effective_user
-    player = db.get_player(user.id)
+    
+    # 🔥 AUTO-REGISTER
+    player = ensure_player_exists(user.id, user.username or user.first_name)
 
     if not player:
-        # --- TEXT UPDATE ---
-        await update.message.reply_text(f"{user.mention_html()}, you must /register first to start your journey!", parse_mode="HTML")
+        await update.message.reply_text("❌ Registration failed. Try again.")
         return
-        # -------------------
 
     today_date = datetime.date.today()
     if player.get('last_mission_reset_date') != today_date:
@@ -57,13 +58,13 @@ async def mission_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles the user's mission selection."""
     query = update.callback_query
     user = query.from_user
-    player = db.get_player(user.id)
+    
+    # 🔥 AUTO-REGISTER (for callback queries)
+    player = ensure_player_exists(user.id, user.username or user.first_name)
     
     if not player:
-        # --- TEXT UPDATE ---
-        await query.answer("Please /register first to perform missions!", show_alert=True)
+        await query.answer("❌ Registration failed!", show_alert=True)
         return
-        # -------------------
         
     # --- Hospital Check ---
     is_hospitalized, remaining = gl.get_hospital_status(player)
