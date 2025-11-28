@@ -1,0 +1,20 @@
+[
+    {
+        "id": 1344,
+        "name": "Naruto Uzumaki",
+        "image": "https://static.wikia.nocookie.net/naruto/images/d/d6/Naruto_Part_I.png",
+        "rarity": "Legendary"
+    },
+    {
+        "id": 1307,
+        "name": "Sasuke Uchiha",
+        "image": "https://static.wikia.nocookie.net/naruto/images/2/21/Sasuke_Part_1.png",
+        "rarity": "Legendary"
+    },
+    {
+        "id": 456,
+        "name": "Kakashi Hatake",
+        "image": "https://static.wikia.nocookie.net/naruto/images/2/27/Kakashi_Hatake.png",
+        "rarity": "Epic"
+    }
+]
