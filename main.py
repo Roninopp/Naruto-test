@@ -55,7 +55,7 @@ import ai_chat        # 🔥 NEW: AI CHAT MODULE
 import spawn_system
 
 # --- Constants ---
-BOT_TOKEN = "8280105345:AAHJY49dOD-YCjasJZ1RoDJ6mtblnndXsyI"
+BOT_TOKEN = "8341511264:AAFjNIOYE5NbABPloFbz-r989l2ySRUs988"
 START_IMAGE_URL = "https://envs.sh/r6z.jpg" 
 
 # ═══════════════════════════════════════════════════
